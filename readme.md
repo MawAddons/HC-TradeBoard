@@ -1,4 +1,4 @@
-# TradeBoard 0.3.3 live-network prototype
+# TradeBoard 0.4.0 persistent-community prototype
 
 TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -19,6 +19,7 @@ Use `/tb`, `/tradeboard`, or left-click the coin icon beside the minimap to hide
 - A character can publish any number of active sale listings. Mouse-wheel the five-row **My Active Sales** view, then select one and click **Remove Selected** to withdraw it.
 - In **Trade Chains**, use **List / Edit My Chain** to publish your chain or **Delete My Chain** to withdraw it.
 - In **Professions**, use **List / Edit Mine** to publish services learned by the current character, including skill rank and an optional short note.
+- The Professions tab includes the three guilds with the most distinct providers. Click a guild sigil to filter the service table; click it again to clear the filter.
 - Press Enter to open normal chat, then Shift-left-click a listed item to insert its real item link.
 
 ## Features
@@ -33,9 +34,12 @@ Use `/tb`, `/tradeboard`, or left-click the coin icon beside the minimap to hide
 - Hover a Browse result to see the normal WoW item-stat tooltip stacked above the TradeBoard listing summary.
 - Real bag-backed sale listings with quantity and gold/silver/copper unit pricing.
 - Saved personal listings and a saved 12-slot level 5-60 trade chain.
-- Peer discovery, sync requests, paced announcements, removals, periodic refreshes, and stale-peer expiry.
+- Peer discovery, sync requests, paced announcements, removals, periodic refreshes, and persistent offline caching.
 - Listing broadcasts include the seller's current character level and item icon texture, with local item-cache refresh as a fallback.
-- Peer-synced profession services with profession filters, current skill rank, optional service notes, online status, and direct whispering.
+- Offline listings remain available when **Online only** is unchecked, with dimmed rows and last-seen information.
+- Peer-synced profession services with profession and guild filters, current skill rank, guild name, optional service notes, online/last-seen status, and direct whispering.
+- Top-three guild provider cards count distinct characters and use a deterministic shared shield sigil derived from the guild name.
+- Browse and Professions tables include Guild columns.
 - The custom protocol channel is removed from the visible chat windows after joining.
 - Visible network state and peer count in the TradeBoard status bar.
 - Select a listing to open a whisper to its trader or request to add that trader to the friend list.
@@ -45,5 +49,6 @@ Use `/tb`, `/tradeboard`, or left-click the coin icon beside the minimap to hide
 
 - Every player who wants to see or publish listings needs TradeBoard installed and must be able to join the same custom channel. Whether Horde and Alliance share that custom channel depends on the server implementation.
 - Listings are an advertisement only. TradeBoard does not move items, money, or automate trades.
-- Only online/regularly refreshed peer data is retained; remote data expires after ten minutes without a refresh.
+- Remote listings and profession services are cached locally and become offline after ten minutes without a refresh. They remain until an explicit withdrawal is received or the saved cache is cleared, so an undelivered withdrawal can leave an old offline advertisement visible.
+- Guild names and rankings appear only for records broadcast by TradeBoard 0.4.0 or newer; older peer versions remain compatible but have no guild field.
 - The first live build publishes sale listings. Wanted-order creation is planned but not yet in the posting form.
