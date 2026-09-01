@@ -2,7 +2,7 @@
 ## Title: TradeBoard
 ## Notes: Peer-synced community trade board for WoW 1.12.1.
 ## Author: Community Prototype
-## Version: 0.4.0
+## Version: 0.4.1
 ## SavedVariables: TradeBoardDB
 
 Core.lua

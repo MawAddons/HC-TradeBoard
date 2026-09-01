@@ -407,16 +407,8 @@ function TB:CreateBrowsePane(parent)
         TB:SetStatus("Choose an item from your bags, then set quantity and unit price.")
     end)
 
-    local refreshButton = CreateButton(pane, "Sync", 100, 34)
-    refreshButton:SetPoint("RIGHT", listButton, "LEFT", -8, 0)
-    refreshButton:SetScript("OnClick", function()
-        TB:ProbeAndSync()
-        TB:UpdateBrowse()
-        TB:SetStatus("Peer probe and listing sync requested.")
-    end)
-
     local addFriendButton = CreateButton(pane, "Add Friend", 108, 34)
-    addFriendButton:SetPoint("RIGHT", refreshButton, "LEFT", -8, 0)
+    addFriendButton:SetPoint("RIGHT", listButton, "LEFT", -8, 0)
     addFriendButton:SetScript("OnClick", function()
         local listing = TB.State.selectedListing
         if listing then
@@ -684,8 +676,9 @@ function TB:ShowBrowseListingTooltips(row, listing)
 
     GameTooltip:SetOwner(row, "ANCHOR_NONE")
     GameTooltip:ClearLines()
-    if listing.itemLink and listing.itemLink ~= "" then
-        GameTooltip:SetHyperlink(listing.itemLink)
+    local hyperlink = self:GetListingTooltipHyperlink(listing)
+    if hyperlink then
+        GameTooltip:SetHyperlink(hyperlink)
     else
         GameTooltip:SetText("Item details unavailable", 0.75, 0.72, 0.64)
     end
@@ -1099,13 +1092,6 @@ function TB:CreateMyListingsPane(parent)
         else
             TB:SetStatus("Select one of your listings before removing it.")
         end
-    end)
-
-    local sync = CreateButton(listPanel, "Sync Now", 100, 32)
-    sync:SetPoint("RIGHT", remove, "LEFT", -8, 0)
-    sync:SetScript("OnClick", function()
-        TB:ProbeAndSync()
-        TB:SetStatus("Peer probe and listing sync requested.")
     end)
 
     self:UpdateListingEditor()
@@ -1677,13 +1663,6 @@ function TB:CreateProfessionsPane(parent)
             TB:SetStatus("Select a profession service before whispering its crafter.")
         end
     end)
-    local sync = CreateButton(results, "Sync", 76, 32)
-    sync:SetPoint("RIGHT", whisper, "LEFT", -7, 0)
-    sync:SetScript("OnClick", function()
-        TB:ProbeAndSync()
-        TB:SetStatus("Peer probe and profession-service sync requested.")
-    end)
-
     self:CreateProfessionEditor(pane)
     self:UpdateProfessions()
 end
@@ -2231,6 +2210,9 @@ function TB:Toggle()
     else
         self.Frames.main:Show()
         self:SetActiveTab(self.State.activeTab)
+        self:ProbeAndSync()
+        self.Network.nextOpenSync = GetTime() + self.AUTO_SYNC_INTERVAL
+        self:SetStatus("Automatic sync requested; refreshes every minute while TradeBoard is open.")
     end
 end
 

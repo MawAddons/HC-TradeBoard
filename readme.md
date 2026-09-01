@@ -1,4 +1,4 @@
-# TradeBoard 0.4.0 persistent-community prototype
+# TradeBoard 0.4.1 persistent-community prototype
 
 TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -14,7 +14,7 @@ Use `/tb`, `/tradeboard`, or left-click the coin icon beside the minimap to hide
 ## Using it
 
 - Open TradeBoard with `/tb`, `/tradeboard`, or the minimap coin.
-- Use `/tb probe`, `/tb sync`, or the **Sync** button to re-run peer discovery and request current listings.
+- Opening TradeBoard automatically requests current peer data and repeats that request every minute while the window remains open. `/tb probe` and `/tb sync` remain available as diagnostic commands.
 - With TradeBoard open, Shift-left-click a bag item to load it into **My Listings**. You can also drag it onto the sale slot or arm one normal bag click. TradeBoard never opens the bags automatically.
 - A character can publish any number of active sale listings. Mouse-wheel the five-row **My Active Sales** view, then select one and click **Remove Selected** to withdraw it.
 - In **Trade Chains**, use **List / Edit My Chain** to publish your chain or **Delete My Chain** to withdraw it.
@@ -32,6 +32,7 @@ Use `/tb`, `/tradeboard`, or left-click the coin icon beside the minimap to hide
 - Click any table header to sort ascending or descending, including numeric unit-price sorting.
 - Mouse-wheel scrolling over the result table.
 - Hover a Browse result to see the normal WoW item-stat tooltip stacked above the TradeBoard listing summary.
+- Item-stat tooltips pass raw `item:...` hyperlinks for compatibility with AtlasLoot tooltip hooks.
 - Real bag-backed sale listings with quantity and gold/silver/copper unit pricing.
 - Saved personal listings and a saved 12-slot level 5-60 trade chain.
 - Peer discovery, sync requests, paced announcements, removals, periodic refreshes, and persistent offline caching.

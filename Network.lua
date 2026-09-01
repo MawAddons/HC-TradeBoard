@@ -1266,6 +1266,15 @@ function TB:NetworkOnUpdate()
     local now = GetTime()
     self:SendQueuedMessage()
 
+    if self.Frames and self.Frames.main and self.Frames.main:IsShown() then
+        if self.Network.nextOpenSync and now >= self.Network.nextOpenSync then
+            self.Network.nextOpenSync = now + self.AUTO_SYNC_INTERVAL
+            self:ProbeAndSync()
+        end
+    else
+        self.Network.nextOpenSync = nil
+    end
+
     if self.Network.pendingProbeResponse and now >= self.Network.pendingProbeResponse.due then
         local response = self.Network.pendingProbeResponse
         self.Network.pendingProbeResponse = nil

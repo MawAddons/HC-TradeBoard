@@ -1,12 +1,13 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.4.0"
+TradeBoard.VERSION = "0.4.1"
 TradeBoard.MAX_VISIBLE_ROWS = 7
 TradeBoard.MAX_MY_LISTING_ROWS = 5
 TradeBoard.CHANNEL_NAME = "TradeBoard"
 TradeBoard.PROTOCOL = "TB1"
 TradeBoard.REMOTE_TTL = 600
 TradeBoard.ANNOUNCE_INTERVAL = 240
+TradeBoard.AUTO_SYNC_INTERVAL = 60
 
 TradeBoard.Listings = {}
 TradeBoard.ListingIndex = {}
@@ -218,6 +219,21 @@ function TradeBoard:GetListingItemLink(listing)
     end
     local info = self.Quality[listing.quality] or self.Quality[1]
     return "|c" .. info.hex .. "|Hitem:" .. listing.itemID .. ":0:0:0|h[" .. listing.name .. "]|h|r"
+end
+
+function TradeBoard:GetListingTooltipHyperlink(listing)
+    local link = self:GetListingItemLink(listing)
+    if not link then
+        return nil
+    end
+    local _, _, hyperlink = string.find(link, "|H([^|]+)|h")
+    if hyperlink then
+        return hyperlink
+    end
+    if string.find(link, "^item:") then
+        return link
+    end
+    return nil
 end
 
 function TradeBoard:ListingHasTag(listing, tag)
