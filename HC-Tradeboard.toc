@@ -1,8 +1,8 @@
 ## Interface: 11200
-## Title: |cffb8c0ccHC|r |cffffffffTradeBoard|r
+## Title: |cffb8c0ccHC|r |cffa335eeTradeBoard|r
 ## Notes: A peersync TradeBoard for the HC Community where there is no AH available.
 ## Author: OctoWow Community
-## Version: 0.4.8
+## Version: 0.4.9
 ## SavedVariables: TradeBoardDB
 
 Core.lua
