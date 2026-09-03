@@ -1,8 +1,8 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.4.6"
-TradeBoard.DISPLAY_TITLE = "HC TradeBoard Community"
-TradeBoard.COLORED_TITLE = "|cffff4d4dHC|r |cfff0b43cTradeBoard|r |cff00ff98Community|r"
+TradeBoard.VERSION = "0.4.8"
+TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
+TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffffffffTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 7
 TradeBoard.MAX_MY_LISTING_ROWS = 5
 TradeBoard.CHANNEL_NAME = "TradeBoard"

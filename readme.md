@@ -1,6 +1,6 @@
-# HC TradeBoard Community 0.4.6
+# HC TradeBoard 0.4.8
 
-HC TradeBoard Community is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
+HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
 ## Screenshots
 
@@ -16,7 +16,7 @@ HC TradeBoard Community is a lightweight peer-synced market board for World of W
 
 1. Copy the `HC-Tradeboard` folder into `World of Warcraft\Interface\AddOns\`.
 2. Confirm the final path is `Interface\AddOns\HC-Tradeboard\HC-Tradeboard.toc`.
-3. Start the 1.12.1 client and enable **HC TradeBoard Community** on the character-selection AddOns screen.
+3. Start the 1.12.1 client and enable **HC TradeBoard** on the character-selection AddOns screen.
 4. Log in. HC TradeBoard stays closed until you open it.
 
 Use `/tb`, `/tradeboard`, or left-click the coin icon beside the minimap to hide or show it. Hold Ctrl and left-drag the coin to move it around the minimap.
