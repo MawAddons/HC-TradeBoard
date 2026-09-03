@@ -225,7 +225,7 @@ function TB:CreateMainFrame()
     headerBg:SetTexture(0.025, 0.025, 0.025, 1)
     headerBg:SetAllPoints(header)
 
-    local title = CreateText(header, "HC TradeBoard Community", "GameFontNormalLarge", 1.00, 0.78, 0.20)
+    local title = CreateText(header, self.COLORED_TITLE, "GameFontNormalLarge", 1.00, 1.00, 1.00)
     title:SetPoint("CENTER", header, "CENTER", 0, 1)
 
     local version = CreateText(header, "v" .. self.VERSION, "GameFontDisableSmall", 0.55, 0.50, 0.40)
@@ -364,7 +364,7 @@ function TB:CreateMinimapButton()
     end)
     button:SetScript("OnEnter", function()
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-        GameTooltip:SetText("HC TradeBoard Community", 1.00, 0.82, 0.24)
+        GameTooltip:SetText(TB.COLORED_TITLE, 1.00, 1.00, 1.00)
         GameTooltip:AddLine("Left-click to open or close.", 0.88, 0.84, 0.75)
         GameTooltip:AddLine("Ctrl + left-drag to move.", 0.88, 0.84, 0.75)
         GameTooltip:AddLine("You can also type /tb.", 0.65, 0.72, 0.90)
@@ -2284,7 +2284,7 @@ function TB:Initialize()
             TB:UpdateBrowse()
             if not TB.hasEnteredWorld then
                 TB.hasEnteredWorld = 1
-                DEFAULT_CHAT_FRAME:AddMessage("|cffffcc33HC TradeBoard Community|r loaded. Type |cffffffff/tb|r to open or |cffffffff/tb probe|r to resync.")
+                DEFAULT_CHAT_FRAME:AddMessage(TB.COLORED_TITLE .. " loaded. Type |cffffffff/tb|r to open or |cffffffff/tb probe|r to resync.")
             end
         elseif event == "PLAYER_LEVEL_UP" then
             TB:RefreshOwnListingLevels(arg1)
