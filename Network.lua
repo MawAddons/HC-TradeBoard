@@ -685,10 +685,79 @@ function TB:QueueServiceAnnouncement(service, delay)
         service.lastSeen = GetTime()
         service.lastSeenAt = self:GetWallTime()
     end
-    self:QueueMessage(self:BuildServiceMessage(service), delay or 0)
+    self:QueueMessage(self:BuildServiceMessage(service), delay or 0, "service:" .. string.lower(service.profession or ""))
+end
+
+function TB:CancelPendingProfessionUpdates()
+    self.PendingProfessionUpdates = {}
+    if self.Network then
+        self.Network.professionUpdateDue = nil
+    end
+end
+
+function TB:ClearQueuedServiceAnnouncements()
+    if not self.SendQueue then
+        return
+    end
+    local i
+    for i = table.getn(self.SendQueue), 1, -1 do
+        local key = self.SendQueue[i].key
+        if key == "services:reset" or (key and string.sub(key, 1, 8) == "service:") then
+            table.remove(self.SendQueue, i)
+        end
+    end
+end
+
+function TB:RecordPublishedProfessionChanges()
+    if not self.servicesLoaded or table.getn(self.MyServices) == 0 then
+        return 0
+    end
+    if not self.PendingProfessionUpdates then
+        self.PendingProfessionUpdates = {}
+    end
+    local changed = 0
+    local i
+    for i = 1, table.getn(self.MyServices) do
+        local service = self.MyServices[i]
+        local known = self.KnownProfessions and self.KnownProfessions[service.profession]
+        if known and (service.rank ~= known.rank or service.maxRank ~= known.maxRank) then
+            service.rank = known.rank
+            service.maxRank = known.maxRank
+            self.PendingProfessionUpdates[service.profession] = 1
+            changed = changed + 1
+        end
+    end
+    if changed > 0 then
+        self:SaveMyServices()
+        self.Network.professionUpdateDue = GetTime() + self.PROFESSION_UPDATE_DEBOUNCE
+        if self.UpdateProfessions then
+            self:UpdateProfessions()
+        end
+    end
+    return changed
+end
+
+function TB:FlushPublishedProfessionChanges()
+    local pending = self.PendingProfessionUpdates or {}
+    self.PendingProfessionUpdates = {}
+    self.Network.professionUpdateDue = nil
+    local delay = 0
+    local queued = 0
+    local i
+    for i = 1, table.getn(self.MyServices) do
+        local service = self.MyServices[i]
+        if pending[service.profession] then
+            self:QueueServiceAnnouncement(service, delay)
+            delay = delay + SEND_DELAY
+            queued = queued + 1
+        end
+    end
+    return queued
 end
 
 function TB:SaveOwnServices(services)
+    self:CancelPendingProfessionUpdates()
+    self:ClearQueuedServiceAnnouncements()
     local owner = UnitName("player") or "Unknown"
     self:RemoveServices(owner)
     self.MyServices = {}
@@ -706,7 +775,7 @@ function TB:SaveOwnServices(services)
         self:UpsertService(service)
     end
     self:SaveMyServices()
-    self:QueueMessage(self.PROTOCOL .. "~Z", 0)
+    self:QueueMessage(self.PROTOCOL .. "~Z", 0, "services:reset")
     local delay = SEND_DELAY
     for i = 1, table.getn(self.MyServices) do
         self:QueueServiceAnnouncement(self.MyServices[i], delay)
@@ -923,15 +992,27 @@ function TB:QueueChainAnnouncement(chain, delay)
     self:QueueMessage(self:BuildChainMessage(chain), delay or 0)
 end
 
-function TB:QueueMessage(message, delay)
+function TB:QueueMessage(message, delay, queueKey)
     if not self.SendQueue then
         self.SendQueue = {}
     end
     if string.len(message) > 250 then
-        self:SetStatus("A TradeBoard message was too long to send safely.")
+        self:SetStatus("An HC TradeBoard message was too long to send safely.")
         return nil
     end
-    table.insert(self.SendQueue, { message = message, due = GetTime() + (delay or 0) })
+    local due = GetTime() + (delay or 0)
+    if queueKey then
+        local i
+        for i = 1, table.getn(self.SendQueue) do
+            local queued = self.SendQueue[i]
+            if queued.key == queueKey then
+                queued.message = message
+                queued.due = due
+                return 1
+            end
+        end
+    end
+    table.insert(self.SendQueue, { message = message, due = due, key = queueKey })
     return 1
 end
 
@@ -1264,6 +1345,9 @@ function TB:NetworkOnUpdate()
         return
     end
     local now = GetTime()
+    if self.Network.professionUpdateDue and now >= self.Network.professionUpdateDue then
+        self:FlushPublishedProfessionChanges()
+    end
     self:SendQueuedMessage()
 
     if self.Frames and self.Frames.main and self.Frames.main:IsShown() then
@@ -1380,23 +1464,13 @@ function TB:NetworkOnEvent(eventName, one, two, three, four, five, six, seven, e
             end
             return
         end
-        if table.getn(self.MyServices) > 0 then
-            local refreshed = {}
-            local i
-            for i = 1, table.getn(self.MyServices) do
-                local service = self.MyServices[i]
-                local known = self.KnownProfessions[service.profession]
-                if known then
-                    table.insert(refreshed, { profession = service.profession, rank = known.rank, maxRank = known.maxRank, note = service.note })
-                end
-            end
-            self:SaveOwnServices(refreshed)
-        end
+        self:RecordPublishedProfessionChanges()
     end
 end
 
 function TB:InitializeNetwork()
     self.SendQueue = {}
+    self.PendingProfessionUpdates = {}
     self.Network = {
         state = "OFFLINE",
         peers = {},

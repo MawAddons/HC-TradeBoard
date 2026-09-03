@@ -1,0 +1,10 @@
+## Interface: 11200
+## Title: HC TradeBoard Community
+## Notes: Peer-synced Hardcore community trade board for WoW 1.12.1.
+## Author: Community Prototype
+## Version: 0.4.4
+## SavedVariables: TradeBoardDB
+
+Core.lua
+Network.lua
+UI.lua

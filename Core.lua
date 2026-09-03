@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.4.1"
+TradeBoard.VERSION = "0.4.4"
 TradeBoard.MAX_VISIBLE_ROWS = 7
 TradeBoard.MAX_MY_LISTING_ROWS = 5
 TradeBoard.CHANNEL_NAME = "TradeBoard"
@@ -8,6 +8,7 @@ TradeBoard.PROTOCOL = "TB1"
 TradeBoard.REMOTE_TTL = 600
 TradeBoard.ANNOUNCE_INTERVAL = 240
 TradeBoard.AUTO_SYNC_INTERVAL = 60
+TradeBoard.PROFESSION_UPDATE_DEBOUNCE = 45
 
 TradeBoard.Listings = {}
 TradeBoard.ListingIndex = {}

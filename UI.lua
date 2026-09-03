@@ -154,6 +154,7 @@ local function CreateEditBox(parent, width, height, text)
     edit:SetText(text or "")
     edit:SetScript("OnEscapePressed", function()
         this:ClearFocus()
+        TB:Close()
     end)
     return edit
 end
@@ -162,6 +163,30 @@ local function CreateHeading(parent, text)
     local heading = CreateText(parent, text, "GameFontNormal", 1.00, 0.78, 0.24)
     heading:SetPoint("TOP", parent, "TOP", 0, -9)
     return heading
+end
+
+function TB:OnMainFrameHidden()
+    self.bagPickMode = nil
+    if self.Frames.chainEditor then
+        self.Frames.chainEditor:Hide()
+    end
+    if self.Frames.professionEditor then
+        self.Frames.professionEditor:Hide()
+    end
+    if self.HideBrowseListingTooltips then
+        self:HideBrowseListingTooltips()
+    else
+        GameTooltip:Hide()
+    end
+end
+
+function TB:Close()
+    local frame = self.Frames and self.Frames.main
+    if not frame then
+        return
+    end
+    frame:StopMovingOrSizing()
+    frame:Hide()
 end
 
 function TB:CreateMainFrame()
@@ -178,6 +203,9 @@ function TB:CreateMainFrame()
     frame:SetBackdrop(MAIN_BACKDROP)
     frame:SetBackdropColor(0.018, 0.018, 0.018, 0.98)
     frame:SetBackdropBorderColor(0.54, 0.42, 0.18, 1)
+    frame:SetScript("OnHide", function()
+        TB:OnMainFrameHidden()
+    end)
     self.Frames.main = frame
 
     local header = CreateFrame("Frame", nil, frame)
@@ -197,17 +225,22 @@ function TB:CreateMainFrame()
     headerBg:SetTexture(0.025, 0.025, 0.025, 1)
     headerBg:SetAllPoints(header)
 
-    local title = CreateText(header, "TradeBoard", "GameFontNormalLarge", 1.00, 0.78, 0.20)
+    local title = CreateText(header, "HC TradeBoard Community", "GameFontNormalLarge", 1.00, 0.78, 0.20)
     title:SetPoint("CENTER", header, "CENTER", 0, 1)
 
     local version = CreateText(header, "v" .. self.VERSION, "GameFontDisableSmall", 0.55, 0.50, 0.40)
     version:SetPoint("LEFT", header, "LEFT", 8, 0)
 
-    local close = CreateButton(header, "X", 30, 28)
-    close:SetPoint("RIGHT", header, "RIGHT", -2, 0)
+    -- Keep the emergency close control outside the draggable header so even a
+    -- small mouse movement cannot turn the click into a header drag.
+    local close = CreateButton(frame, "X", 42, 32)
+    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -20, -15)
+    close:SetFrameLevel(header:GetFrameLevel() + 10)
+    close:RegisterForClicks("LeftButtonDown")
     close:SetScript("OnClick", function()
-        TradeBoardFrame:Hide()
+        TB:Close()
     end)
+    self.Frames.closeButton = close
 
     local content = CreateFrame("Frame", nil, frame)
     content:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -94)
@@ -331,7 +364,7 @@ function TB:CreateMinimapButton()
     end)
     button:SetScript("OnEnter", function()
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-        GameTooltip:SetText("TradeBoard", 1.00, 0.82, 0.24)
+        GameTooltip:SetText("HC TradeBoard Community", 1.00, 0.82, 0.24)
         GameTooltip:AddLine("Left-click to open or close.", 0.88, 0.84, 0.75)
         GameTooltip:AddLine("Ctrl + left-drag to move.", 0.88, 0.84, 0.75)
         GameTooltip:AddLine("You can also type /tb.", 0.65, 0.72, 0.90)
@@ -671,7 +704,7 @@ function TB:ShowBrowseListingTooltips(row, listing)
         summary:AddLine("Last seen: " .. self:FormatLastSeen(listing.lastSeenAt) .. " ago", 0.58, 0.58, 0.58)
     end
     summary:AddLine("Shift-click with chat open to link the item.", 0.35, 1.00, 0.35)
-    summary:AddLine("Synced through the TradeBoard peer channel.", 0.55, 0.55, 0.55)
+    summary:AddLine("Synced through the HC TradeBoard network.", 0.55, 0.55, 0.55)
     summary:Show()
 
     GameTooltip:SetOwner(row, "ANCHOR_NONE")
@@ -888,7 +921,7 @@ function TB:CreateMyListingsPane(parent)
 
     local title = CreateText(pane, "My Listings", "GameFontNormalLarge", 1.00, 0.78, 0.20)
     title:SetPoint("TOPLEFT", pane, "TOPLEFT", 8, -8)
-    local subtitle = CreateText(pane, "Select a real bag item and advertise a unit price to connected TradeBoard peers.", "GameFontHighlightSmall", 0.66, 0.63, 0.56)
+    local subtitle = CreateText(pane, "Select a real bag item and advertise a unit price to connected HC TradeBoard peers.", "GameFontHighlightSmall", 0.66, 0.63, 0.56)
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 
     local editor = CreatePanel(pane, 348, 424)
@@ -1627,7 +1660,7 @@ function TB:CreateProfessionsPane(parent)
                 GameTooltip:AddLine("Skill " .. this.service.rank .. "/" .. this.service.maxRank, 0.90, 0.86, 0.76)
                 GameTooltip:AddLine(this.service.note ~= "" and this.service.note or "Available for profession work.", 0.76, 0.72, 0.65, 1)
                 if this.service.online then
-                    GameTooltip:AddLine("Online through TradeBoard", 0.30, 1.00, 0.30)
+                    GameTooltip:AddLine("Online through HC TradeBoard", 0.30, 1.00, 0.30)
                 else
                     GameTooltip:AddLine("Last seen: " .. TB:FormatLastSeen(this.service.lastSeenAt) .. " ago", 0.58, 0.58, 0.58)
                 end
@@ -2206,13 +2239,13 @@ end
 
 function TB:Toggle()
     if self.Frames.main:IsShown() then
-        self.Frames.main:Hide()
+        self:Close()
     else
         self.Frames.main:Show()
         self:SetActiveTab(self.State.activeTab)
         self:ProbeAndSync()
         self.Network.nextOpenSync = GetTime() + self.AUTO_SYNC_INTERVAL
-        self:SetStatus("Automatic sync requested; refreshes every minute while TradeBoard is open.")
+        self:SetStatus("Automatic sync requested; refreshes every minute while HC TradeBoard is open.")
     end
 end
 
@@ -2251,7 +2284,7 @@ function TB:Initialize()
             TB:UpdateBrowse()
             if not TB.hasEnteredWorld then
                 TB.hasEnteredWorld = 1
-                DEFAULT_CHAT_FRAME:AddMessage("|cffffcc33TradeBoard|r loaded. Type |cffffffff/tb|r to open or |cffffffff/tb probe|r to resync.")
+                DEFAULT_CHAT_FRAME:AddMessage("|cffffcc33HC TradeBoard Community|r loaded. Type |cffffffff/tb|r to open or |cffffffff/tb probe|r to resync.")
             end
         elseif event == "PLAYER_LEVEL_UP" then
             TB:RefreshOwnListingLevels(arg1)
