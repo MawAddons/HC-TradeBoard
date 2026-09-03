@@ -1,6 +1,16 @@
-# HC TradeBoard Community 0.4.4
+# HC TradeBoard Community 0.4.5
 
 HC TradeBoard Community is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
+
+## Screenshots
+
+| Browse and filter listings | Create and manage sale listings |
+| --- | --- |
+| ![Browse tab showing item, level, rarity, and trader filters](screenshots/browse.png) | ![My Listings tab showing the sale editor and active listings](screenshots/my-listings.png) |
+
+| Build community trade chains | Find profession providers |
+| --- | --- |
+| ![Trade Chains tab showing the level 5 through 60 handoff path](screenshots/trade-chains.png) | ![Professions tab showing an online Alchemy provider](screenshots/professions.png) |
 
 ## Install
 

@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: HC TradeBoard Community
-## Notes: Peer-synced Hardcore community trade board for WoW 1.12.1.
-## Author: Community Prototype
-## Version: 0.4.4
+## Notes: A peersync TradeBoard for the HC Community where there is no AH available.
+## Author: OctoWow Community
+## Version: 0.4.5
 ## SavedVariables: TradeBoardDB
 
 Core.lua

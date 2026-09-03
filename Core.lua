@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.4.4"
+TradeBoard.VERSION = "0.4.5"
 TradeBoard.MAX_VISIBLE_ROWS = 7
 TradeBoard.MAX_MY_LISTING_ROWS = 5
 TradeBoard.CHANNEL_NAME = "TradeBoard"
