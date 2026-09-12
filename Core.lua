@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.4.9"
+TradeBoard.VERSION = "0.5.0"
 TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
 TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffa335eeTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 7
@@ -11,6 +11,9 @@ TradeBoard.REMOTE_TTL = 600
 TradeBoard.ANNOUNCE_INTERVAL = 240
 TradeBoard.AUTO_SYNC_INTERVAL = 60
 TradeBoard.PROFESSION_UPDATE_DEBOUNCE = 45
+TradeBoard.MAX_WORLD_LOGS = 500
+TradeBoard.MAX_WORLD_ROWS = 8
+TradeBoard.WHO_LOOKUP_INTERVAL = 8
 
 TradeBoard.Listings = {}
 TradeBoard.ListingIndex = {}
@@ -102,6 +105,9 @@ TradeBoard.State = {
     guildFilter = nil,
     sortKey = "unitPrice",
     sortAscending = 1,
+    worldOffset = 0,
+    worldSearch = "",
+    worldType = "ALL",
 }
 
 function TradeBoard:GetPlayerLevel()
@@ -170,6 +176,119 @@ end
 function TradeBoard:GetPlayerGuildName()
     local guildName = GetGuildInfo("player")
     return guildName or ""
+end
+
+function TradeBoard:IsWorldChannel(channelName)
+    local name = string.lower(channelName or "")
+    name = string.gsub(name, "^%d+%.%s*", "")
+    return name == "world"
+end
+
+function TradeBoard:GetWorldMessageType(message)
+    local padded = " " .. string.upper(message or "") .. " "
+    if string.find(padded, "[%s%p]WTS[%s%p]") then return "WTS" end
+    if string.find(padded, "[%s%p]LFW[%s%p]") then return "LFW" end
+    return nil
+end
+
+function TradeBoard:ExtractWorldItemLinks(message)
+    local links = {}
+    local seen = {}
+    local link
+    for link in string.gfind(message or "", "(|c%x+|Hitem:[^|]+|h%[[^]]+%]|h|r)") do
+        if not seen[link] then seen[link] = 1; table.insert(links, link) end
+    end
+    return links
+end
+
+function TradeBoard:GetKnownTraderInfo(name)
+    local key = string.lower(name or "")
+    if key == string.lower(UnitName("player") or "") then
+        return self:GetPlayerLevel(), self:GetPlayerGuildName()
+    end
+    if TradeBoardDB and TradeBoardDB.worldPeople and TradeBoardDB.worldPeople[key] then
+        local person = TradeBoardDB.worldPeople[key]
+        return tonumber(person.level), person.guild or ""
+    end
+    local i
+    for i = 1, table.getn(self.Listings) do
+        local listing = self.Listings[i]
+        if string.lower(listing.trader or "") == key then return tonumber(listing.traderLevel), listing.guild or "" end
+    end
+    for i = 1, table.getn(self.Services) do
+        local service = self.Services[i]
+        if string.lower(service.trader or "") == key then return tonumber(service.traderLevel), service.guild or "" end
+    end
+    return nil, ""
+end
+
+function TradeBoard:InitializeWorldLog()
+    if not TradeBoardDB then TradeBoardDB = {} end
+    if type(TradeBoardDB.worldLog) ~= "table" then TradeBoardDB.worldLog = {} end
+    if type(TradeBoardDB.worldPeople) ~= "table" then TradeBoardDB.worldPeople = {} end
+    self.WorldLog = TradeBoardDB.worldLog
+    self.WhoQueue = self.WhoQueue or {}
+    local i
+    for i = 1, table.getn(self.WorldLog) do
+        local entry = self.WorldLog[i]
+        if type(entry) == "table" and type(entry.items) ~= "table" then
+            entry.items = self:ExtractWorldItemLinks(entry.message)
+        end
+    end
+    while table.getn(self.WorldLog) > self.MAX_WORLD_LOGS do table.remove(self.WorldLog, 1) end
+end
+
+function TradeBoard:QueueWhoLookup(name)
+    if not name or name == "" then return end
+    local key = string.lower(name)
+    if TradeBoardDB.worldPeople[key] or self.PendingWhoName == key then return end
+    local i
+    for i = 1, table.getn(self.WhoQueue) do if self.WhoQueue[i] == name then return end end
+    table.insert(self.WhoQueue, name)
+end
+
+function TradeBoard:CaptureWorldMessage(message, sender, channelName)
+    if not self:IsWorldChannel(channelName) then return end
+    local kind = self:GetWorldMessageType(message)
+    if not kind then return end
+    self:InitializeWorldLog()
+    local level, guild = self:GetKnownTraderInfo(sender)
+    local entry = {
+        timestamp = self:GetWallTime(), type = kind, sender = sender or "Unknown",
+        level = level, guild = guild or "", message = message or "",
+        items = self:ExtractWorldItemLinks(message),
+    }
+    table.insert(self.WorldLog, entry)
+    while table.getn(self.WorldLog) > self.MAX_WORLD_LOGS do table.remove(self.WorldLog, 1) end
+    if not level or guild == "" then self:QueueWhoLookup(sender) end
+    if self.UpdateWorldLog then self:UpdateWorldLog() end
+end
+
+function TradeBoard:ApplyWhoResult(name, guild, level)
+    if not name or name == "" then return end
+    local key = string.lower(name)
+    TradeBoardDB.worldPeople[key] = { guild = guild or "", level = tonumber(level), seenAt = self:GetWallTime() }
+    local i
+    for i = 1, table.getn(self.WorldLog or {}) do
+        local entry = self.WorldLog[i]
+        if string.lower(entry.sender or "") == key then
+            entry.guild = guild or entry.guild or ""
+            entry.level = tonumber(level) or entry.level
+        end
+    end
+end
+
+function TradeBoard:GetFilteredWorldLog()
+    local result = {}
+    local needle = string.lower(self.State.worldSearch or "")
+    local i
+    for i = 1, table.getn(self.WorldLog or {}) do
+        local entry = self.WorldLog[i]
+        local typeMatches = self.State.worldType == "ALL" or entry.type == self.State.worldType
+        local text = string.lower((entry.sender or "") .. " " .. (entry.guild or "") .. " " .. (entry.message or ""))
+        if typeMatches and (needle == "" or string.find(text, needle, 1, 1)) then table.insert(result, entry) end
+    end
+    return result
 end
 
 function TradeBoard:GetGuildSigilTexture(guildName)

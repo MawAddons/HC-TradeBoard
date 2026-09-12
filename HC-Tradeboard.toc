@@ -2,7 +2,7 @@
 ## Title: |cffb8c0ccHC|r |cffa335eeTradeBoard|r
 ## Notes: A peersync TradeBoard for the HC Community where there is no AH available.
 ## Author: OctoWow Community
-## Version: 0.4.9
+## Version: 0.5.0
 ## SavedVariables: TradeBoardDB
 
 Core.lua

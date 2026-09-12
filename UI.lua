@@ -252,6 +252,7 @@ function TB:CreateMainFrame()
     self:CreateMyListingsPane(content)
     self:CreateTradeChainsPane(content)
     self:CreateProfessionsPane(content)
+    self:CreateWorldLogPane(content)
 
     local statusBar = CreateFrame("Frame", nil, frame)
     statusBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 15)
@@ -379,8 +380,8 @@ end
 
 function TB:CreateTabs(parent)
     self.Frames.tabs = {}
-    local names = { "Browse", "My Listings", "Trade Chains", "Professions" }
-    local widths = { 130, 150, 150, 145 }
+    local names = { "Browse", "My Listings", "Trade Chains", "Professions", "World WTS/LFW" }
+    local widths = { 112, 132, 132, 124, 148 }
     local x = 24
     local i
 
@@ -909,7 +910,7 @@ function TB:CreateResultsPanel(parent)
         self.Frames.resultRows[i] = row
     end
 
-    local scrollHint = CreateText(panel, "Mouse wheel scrolls", "GameFontDisableSmall", 0.45, 0.43, 0.38)
+    local scrollHint = CreateText(panel, "SCROLL: use mouse wheel over this list", "GameFontNormalSmall", 1.00, 0.72, 0.20)
     scrollHint:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 5)
 end
 
@@ -1220,7 +1221,7 @@ function TB:UpdateMyListings()
     end
     local countText = total .. (total == 1 and " active listing" or " active listings")
     if maxOffset > 0 then
-        countText = countText .. " - mouse wheel scrolls"
+        countText = countText .. " - SCROLL WITH MOUSE WHEEL"
     end
     self.Frames.myListingCount:SetText(countText)
 end
@@ -1281,7 +1282,7 @@ function TB:CreateTradeChainsPane(parent)
         TB:DeleteOwnChain()
     end)
 
-    local scrollChains = CreateText(listPanel, "Mouse wheel: more chains", "GameFontDisableSmall", 0.48, 0.45, 0.40)
+    local scrollChains = CreateText(listPanel, "SCROLL: mouse wheel for more chains", "GameFontNormalSmall", 1.00, 0.72, 0.20)
     scrollChains:SetPoint("BOTTOM", deleteChain, "TOP", 0, 5)
 
     local detail = CreatePanel(pane, 738, 430)
@@ -1971,6 +1972,152 @@ function TB:UpdateProfessions()
     self:UpdateProfessionRows(self:GetFilteredServices())
 end
 
+function TB:CreateWorldLogPane(parent)
+    local pane = CreateFrame("Frame", nil, parent)
+    pane:SetAllPoints(parent)
+    pane:Hide()
+    self.Frames.worldLogPane = pane
+
+    local title = CreateText(pane, "World WTS / LFW", "GameFontNormalLarge", 1.00, 0.78, 0.20)
+    title:SetPoint("TOPLEFT", pane, "TOPLEFT", 8, -8)
+    local subtitle = CreateText(pane, "Local World-channel archive for sales and crafting offers. Idea credit: Svenne :) | Saved across characters.", "GameFontHighlightSmall", 0.70, 0.67, 0.58)
+    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -5)
+
+    local search = CreateEditBox(pane, 410, 28, self.State.worldSearch)
+    search:SetPoint("TOPLEFT", pane, "TOPLEFT", 8, -50)
+    search:SetScript("OnTextChanged", function()
+        TB.State.worldSearch = this:GetText() or ""
+        TB.State.worldOffset = 0
+        TB:UpdateWorldLog()
+    end)
+    search:SetScript("OnEnterPressed", function() this:ClearFocus() end)
+    self.Frames.worldSearch = search
+
+    local searchHint = CreateText(pane, "Search message, character, or guild", "GameFontDisableSmall", 0.52, 0.50, 0.46)
+    searchHint:SetPoint("LEFT", search, "RIGHT", 10, 0)
+
+    self.Frames.worldTypeButtons = {}
+    local types = { { "All", "ALL" }, { "WTS", "WTS" }, { "LFW", "LFW" } }
+    local previous = nil
+    local i
+    for i = 1, table.getn(types) do
+        local value = types[i][2]
+        local button = CreateButton(pane, types[i][1], 64, 27)
+        if previous then button:SetPoint("LEFT", previous, "RIGHT", 6, 0) else button:SetPoint("TOPRIGHT", pane, "TOPRIGHT", -140, -50) end
+        button:SetScript("OnClick", function()
+            TB.State.worldType = value
+            TB.State.worldOffset = 0
+            TB:UpdateWorldLog()
+        end)
+        self.Frames.worldTypeButtons[value] = button
+        previous = button
+    end
+
+    local panel = CreatePanel(pane, 912, 448)
+    panel:SetPoint("TOPLEFT", pane, "TOPLEFT", 8, -87)
+    panel:EnableMouseWheel(1)
+    panel:SetScript("OnMouseWheel", function()
+        local filtered = TB:GetFilteredWorldLog()
+        local maxOffset = table.getn(filtered) - TB.MAX_WORLD_ROWS
+        if maxOffset < 0 then maxOffset = 0 end
+        if arg1 > 0 then TB.State.worldOffset = TB.State.worldOffset - 1 else TB.State.worldOffset = TB.State.worldOffset + 1 end
+        if TB.State.worldOffset < 0 then TB.State.worldOffset = 0 end
+        if TB.State.worldOffset > maxOffset then TB.State.worldOffset = maxOffset end
+        TB:UpdateWorldLog()
+    end)
+    self.Frames.worldLogRows = {}
+
+    for i = 1, self.MAX_WORLD_ROWS do
+        local row = CreateFrame("Frame", nil, panel)
+        row:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -8 - ((i - 1) * 53))
+        row:SetWidth(896)
+        row:SetHeight(50)
+        row:SetBackdrop(PANEL_BACKDROP)
+        row:SetBackdropColor(math.mod(i, 2) == 0 and 0.050 or 0.025, 0.025, 0.020, 0.90)
+        row:SetBackdropBorderColor(0.25, 0.22, 0.16, 1)
+
+        row.meta = CreateText(row, "", "GameFontNormalSmall", 1.00, 0.74, 0.22)
+        row.meta:SetPoint("TOPLEFT", row, "TOPLEFT", 7, -5)
+        row.meta:SetWidth(884)
+        row.meta:SetJustifyH("LEFT")
+        row.message = CreateText(row, "", "GameFontHighlightSmall", 0.92, 0.90, 0.84)
+        row.message:SetPoint("TOPLEFT", row, "TOPLEFT", 7, -23)
+        row.message:SetWidth(610)
+        row.message:SetJustifyH("LEFT")
+        row.itemButtons = {}
+        local itemIndex
+        for itemIndex = 1, 3 do
+            local itemButton = CreateFrame("Button", nil, row)
+            itemButton:SetWidth(86)
+            itemButton:SetHeight(20)
+            itemButton:SetPoint("TOPRIGHT", row, "TOPRIGHT", -5 - ((itemIndex - 1) * 89), -25)
+            itemButton.text = CreateText(itemButton, "", "GameFontHighlightSmall")
+            itemButton.text:SetAllPoints(itemButton)
+            itemButton.text:SetJustifyH("RIGHT")
+            itemButton:SetScript("OnEnter", function()
+                if this.itemLink then
+                    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+                    local hyperlink = TB:GetListingTooltipHyperlink({ itemLink = this.itemLink })
+                    if hyperlink then GameTooltip:SetHyperlink(hyperlink) end
+                    GameTooltip:Show()
+                end
+            end)
+            itemButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            itemButton:SetScript("OnClick", function()
+                if not this.itemLink then return end
+                if IsShiftKeyDown() and ChatFrameEditBox and ChatFrameEditBox:IsShown() then
+                    ChatFrameEditBox:Insert(this.itemLink)
+                elseif SetItemRef then
+                    local hyperlink = TB:GetListingTooltipHyperlink({ itemLink = this.itemLink })
+                    if hyperlink then SetItemRef(hyperlink, this.itemLink, "LeftButton") end
+                end
+            end)
+            row.itemButtons[itemIndex] = itemButton
+        end
+        self.Frames.worldLogRows[i] = row
+    end
+
+    local count = CreateText(pane, "0 captured messages", "GameFontHighlightSmall", 0.80, 0.75, 0.64)
+    count:SetPoint("BOTTOMLEFT", pane, "BOTTOMLEFT", 10, 2)
+    self.Frames.worldLogCount = count
+    local scroll = CreateText(pane, "SCROLL: use mouse wheel over the message list", "GameFontNormalSmall", 1.00, 0.72, 0.20)
+    scroll:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -10, 2)
+end
+
+function TB:UpdateWorldLog()
+    if not self.Frames.worldLogRows then return end
+    local filtered = self:GetFilteredWorldLog()
+    local total = table.getn(filtered)
+    local maxOffset = total - self.MAX_WORLD_ROWS
+    if maxOffset < 0 then maxOffset = 0 end
+    if self.State.worldOffset > maxOffset then self.State.worldOffset = maxOffset end
+    if self.State.worldOffset < 0 then self.State.worldOffset = 0 end
+    local typeName, button
+    for typeName, button in pairs(self.Frames.worldTypeButtons) do SetButtonSelected(button, typeName == self.State.worldType) end
+    local i
+    for i = 1, self.MAX_WORLD_ROWS do
+        local entry = filtered[total - self.State.worldOffset - i + 1]
+        local row = self.Frames.worldLogRows[i]
+        if entry then
+            local stamp = date and date("%m-%d %H:%M", entry.timestamp) or tostring(entry.timestamp)
+            local guild = entry.guild and entry.guild ~= "" and (" <" .. entry.guild .. ">") or ""
+            local level = entry.level and (" L" .. entry.level) or " L?"
+            row.meta:SetText(stamp .. "  |cff" .. (entry.type == "WTS" and "66ff66" or "66ccff") .. entry.type .. "|r  " .. entry.sender .. level .. guild)
+            row.message:SetText(entry.message)
+            local itemIndex
+            for itemIndex = 1, 3 do
+                local itemButton = row.itemButtons[itemIndex]
+                local link = entry.items and entry.items[itemIndex]
+                if link then itemButton.itemLink = link; itemButton.text:SetText(link); itemButton:Show() else itemButton.itemLink = nil; itemButton:Hide() end
+            end
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+    self.Frames.worldLogCount:SetText(total .. (total == 1 and " captured message" or " captured messages"))
+end
+
 function TB:SetActiveTab(tabName)
     self.State.activeTab = tabName
     if tabName ~= "My Listings" then
@@ -1980,6 +2127,7 @@ function TB:SetActiveTab(tabName)
     self.Frames.myListingsPane:Hide()
     self.Frames.tradeChainsPane:Hide()
     self.Frames.professionsPane:Hide()
+    self.Frames.worldLogPane:Hide()
 
     if tabName == "Browse" then
         self.Frames.browsePane:Show()
@@ -1991,9 +2139,12 @@ function TB:SetActiveTab(tabName)
     elseif tabName == "Trade Chains" then
         self.Frames.tradeChainsPane:Show()
         self:UpdateTradeChains()
-    else
+    elseif tabName == "Professions" then
         self.Frames.professionsPane:Show()
         self:UpdateProfessions()
+    else
+        self.Frames.worldLogPane:Show()
+        self:UpdateWorldLog()
     end
 
     local name, tab

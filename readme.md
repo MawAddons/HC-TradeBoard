@@ -1,4 +1,4 @@
-# HC TradeBoard 0.4.9
+# HC TradeBoard 0.5.0
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -36,13 +36,14 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 
 ## Features
 
-- Browse, My Listings, Trade Chains, and Professions tabs.
+- Browse, My Listings, Trade Chains, Professions, and World WTS/LFW tabs.
+- A local, searchable World-channel archive for WTS and LFW posts, including character, level, guild, original message, and hoverable/clickable item links. Character details are filled from known TradeBoard data and throttled `/who` lookups. Idea credit: Svenne :)
 - A classic minimap coin button for opening and closing HC TradeBoard.
 - Search, category, rarity, trader-level, online, listing-type, and item-level filters.
 - Simple Armor and Weapons subcategories without the full Auction House category tree.
 - Toggle between Required Level and Item Level by clicking the level-type button.
 - Click any table header to sort ascending or descending, including numeric unit-price sorting.
-- Mouse-wheel scrolling over the result table.
+- Prominent mouse-wheel scrolling guidance over result, active-sales, trade-chain, and World-message lists.
 - Hover a Browse result to see the normal WoW item-stat tooltip stacked above the HC TradeBoard listing summary.
 - Item-stat tooltips pass raw `item:...` hyperlinks for compatibility with AtlasLoot tooltip hooks.
 - Real bag-backed sale listings with quantity and gold/silver/copper unit pricing.

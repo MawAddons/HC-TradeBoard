@@ -1345,6 +1345,19 @@ function TB:NetworkOnUpdate()
         return
     end
     local now = GetTime()
+    if self.PendingWhoName and self.pendingWhoStarted and now - self.pendingWhoStarted > 12 then
+        self.PendingWhoName = nil
+    end
+    if not self.PendingWhoName and self.WhoQueue and table.getn(self.WhoQueue) > 0
+        and (not self.nextWhoLookup or now >= self.nextWhoLookup)
+        and (not WhoFrame or not WhoFrame:IsShown()) and SendWho then
+        local name = table.remove(self.WhoQueue, 1)
+        self.PendingWhoName = string.lower(name)
+        self.pendingWhoStarted = now
+        self.nextWhoLookup = now + self.WHO_LOOKUP_INTERVAL
+        if SetWhoToUI then SetWhoToUI(1) end
+        SendWho('n-"' .. name .. '"')
+    end
     if self.Network.professionUpdateDue and now >= self.Network.professionUpdateDue then
         self:FlushPublishedProfessionChanges()
     end
@@ -1419,6 +1432,7 @@ function TB:NetworkOnEvent(eventName, one, two, three, four, five, six, seven, e
         self:LoadSavedChain()
         self:LoadSavedServices()
         self:LoadRemoteCache()
+        self:InitializeWorldLog()
         if self.UpdateMyListings then
             self:UpdateMyListings()
         end
@@ -1438,9 +1452,20 @@ function TB:NetworkOnEvent(eventName, one, two, three, four, five, six, seven, e
         end
         self:JoinNetworkChannel()
     elseif eventName == "CHAT_MSG_CHANNEL" then
+        self:CaptureWorldMessage(one, two, nine)
         if not nine or nine == "" or string.upper(nine) == string.upper(self.CHANNEL_NAME) then
             self:HandleProtocolMessage(one, two)
         end
+    elseif eventName == "WHO_LIST_UPDATE" then
+        if GetNumWhoResults and GetWhoInfo then
+            local i
+            for i = 1, GetNumWhoResults() do
+                local name, guild, level = GetWhoInfo(i)
+                self:ApplyWhoResult(name, guild, level)
+            end
+        end
+        self.PendingWhoName = nil
+        if self.UpdateWorldLog then self:UpdateWorldLog() end
     elseif eventName == "CHAT_MSG_CHANNEL_NOTICE" then
         if one == "YOU_JOINED" and nine and string.upper(nine) == string.upper(self.CHANNEL_NAME) then
             self.Network.channelID = GetChannelName(self.CHANNEL_NAME)
@@ -1486,6 +1511,7 @@ function TB:InitializeNetwork()
     frame:RegisterEvent("CHAT_MSG_CHANNEL")
     frame:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")
     frame:RegisterEvent("SKILL_LINES_CHANGED")
+    frame:RegisterEvent("WHO_LIST_UPDATE")
     frame:SetScript("OnEvent", function()
         TB:NetworkOnEvent(event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
     end)
