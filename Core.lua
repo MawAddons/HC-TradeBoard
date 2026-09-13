@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.5.1"
+TradeBoard.VERSION = "0.5.2"
 TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
 TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffa335eeTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 7
@@ -200,6 +200,43 @@ function TradeBoard:ExtractWorldItemLinks(message)
         if not seen[link] then seen[link] = 1; table.insert(links, link) end
     end
     return links
+end
+
+function TradeBoard:GetWorldMessageSegments(message)
+    local segments = {}
+    local text = message or ""
+    local cursor = 1
+    while cursor <= string.len(text) do
+        local first, last, link = string.find(text, "(|c%x+|Hitem:[^|]+|h%[[^]]+%]|h|r)", cursor)
+        if not first then
+            table.insert(segments, { text = string.sub(text, cursor) })
+            break
+        end
+        if first > cursor then
+            table.insert(segments, { text = string.sub(text, cursor, first - 1) })
+        end
+        table.insert(segments, { text = link, itemLink = link })
+        cursor = last + 1
+    end
+    if table.getn(segments) == 0 then table.insert(segments, { text = text }) end
+    return segments
+end
+
+function TradeBoard:OpenWorldWhisper(name)
+    if not name or name == "" or not ChatFrame_OpenChat then return end
+    ChatFrame_OpenChat("/w " .. name .. " ")
+    self:SetStatus("Whisper opened for " .. name .. ".")
+end
+
+function TradeBoard:OpenWorldGuildWho(guild)
+    if not guild or guild == "" or not SendWho then return end
+    guild = string.gsub(guild, '"', "")
+    self.PendingWhoName = nil
+    self.addonWhoShouldClose = nil
+    self.closeWhoOnNextUpdate = nil
+    if SetWhoToUI then SetWhoToUI(1) end
+    SendWho('g-"' .. guild .. '"')
+    self:SetStatus("Who search sent for <" .. guild .. ">.")
 end
 
 function TradeBoard:GetKnownTraderInfo(name)

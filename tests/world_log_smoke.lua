@@ -26,6 +26,9 @@ TB:CaptureWorldMessage("wTs " .. link .. " cheap", "Seller", "1. World")
 assert(table.getn(TB.WorldLog) == 1, "WTS message was not captured")
 assert(TB.WorldLog[1].type == "WTS", "WTS type was not classified")
 assert(TB.WorldLog[1].items[1] == link, "item hyperlink was not retained")
+local segments = TB:GetWorldMessageSegments("wTs " .. link .. " cheap")
+assert(table.getn(segments) == 3, "World message was not split around its item link")
+assert(segments[2].itemLink == link and segments[3].text == " cheap", "clickable item segment was not retained inline")
 
 TB:CaptureWorldMessage("lfw alchemist", "Crafter", "World")
 assert(table.getn(TB.WorldLog) == 2 and TB.WorldLog[2].type == "LFW", "LFW message was not captured")
@@ -52,5 +55,18 @@ assert(TB.closeWhoOnNextUpdate, "Who close was not deferred until after Blizzard
 TB:CloseAddonWhoFrame()
 assert(not FriendsFrame:IsShown(), "addon-triggered Who window was not closed")
 assert(TB.WorldLog[3].guild == "Buyers Guild" and TB.WorldLog[3].level == 37, "Who result did not enrich WTB data")
+
+local openedChat, sentWho, whoToUI
+function ChatFrame_OpenChat(text) openedChat = text end
+function SendWho(query) sentWho = query end
+function SetWhoToUI(value) whoToUI = value end
+TB:OpenWorldWhisper("Seller")
+assert(openedChat == "/w Seller ", "character click did not prepare a whisper")
+TB.PendingWhoName = "automatic"
+TB.addonWhoShouldClose = 1
+TB.closeWhoOnNextUpdate = 1
+TB:OpenWorldGuildWho("Test Guild")
+assert(sentWho == 'g-"Test Guild"' and whoToUI == 1, "guild click did not issue a visible guild Who query")
+assert(not TB.PendingWhoName and not TB.addonWhoShouldClose and not TB.closeWhoOnNextUpdate, "manual guild Who was still marked for automatic closing")
 
 print("HC TradeBoard World log smoke test passed")

@@ -2036,25 +2036,56 @@ function TB:CreateWorldLogPane(parent)
         row:SetBackdropColor(math.mod(i, 2) == 0 and 0.050 or 0.025, 0.025, 0.020, 0.90)
         row:SetBackdropBorderColor(0.25, 0.22, 0.16, 1)
 
-        row.meta = CreateText(row, "", "GameFontNormalSmall", 1.00, 0.74, 0.22)
-        row.meta:SetPoint("TOPLEFT", row, "TOPLEFT", 7, -5)
-        row.meta:SetWidth(884)
-        row.meta:SetJustifyH("LEFT")
-        row.message = CreateText(row, "", "GameFontHighlightSmall", 0.92, 0.90, 0.84)
-        row.message:SetPoint("TOPLEFT", row, "TOPLEFT", 7, -23)
-        row.message:SetWidth(610)
-        row.message:SetJustifyH("LEFT")
-        row.itemButtons = {}
-        local itemIndex
-        for itemIndex = 1, 3 do
-            local itemButton = CreateFrame("Button", nil, row)
-            itemButton:SetWidth(86)
-            itemButton:SetHeight(20)
-            itemButton:SetPoint("TOPRIGHT", row, "TOPRIGHT", -5 - ((itemIndex - 1) * 89), -25)
-            itemButton.text = CreateText(itemButton, "", "GameFontHighlightSmall")
-            itemButton.text:SetAllPoints(itemButton)
-            itemButton.text:SetJustifyH("RIGHT")
-            itemButton:SetScript("OnEnter", function()
+        row.metaPrefix = CreateText(row, "", "GameFontNormalSmall", 1.00, 0.74, 0.22)
+        row.metaPrefix:SetPoint("TOPLEFT", row, "TOPLEFT", 7, -5)
+        row.metaPrefix:SetJustifyH("LEFT")
+
+        row.senderButton = CreateFrame("Button", nil, row)
+        row.senderButton:SetHeight(16)
+        row.senderButton.text = CreateText(row.senderButton, "", "GameFontNormalSmall", 1.00, 0.74, 0.22)
+        row.senderButton.text:SetAllPoints(row.senderButton)
+        row.senderButton.text:SetJustifyH("LEFT")
+        row.senderButton:SetScript("OnEnter", function()
+            this.text:SetTextColor(1.00, 0.95, 0.55)
+            GameTooltip:SetOwner(this, "ANCHOR_TOP")
+            GameTooltip:SetText("Click to whisper " .. (this.sender or ""))
+            GameTooltip:Show()
+        end)
+        row.senderButton:SetScript("OnLeave", function()
+            this.text:SetTextColor(1.00, 0.74, 0.22)
+            GameTooltip:Hide()
+        end)
+        row.senderButton:SetScript("OnClick", function() TB:OpenWorldWhisper(this.sender) end)
+
+        row.level = CreateText(row, "", "GameFontNormalSmall", 1.00, 0.74, 0.22)
+        row.level:SetJustifyH("LEFT")
+
+        row.guildButton = CreateFrame("Button", nil, row)
+        row.guildButton:SetHeight(16)
+        row.guildButton.text = CreateText(row.guildButton, "", "GameFontNormalSmall", 1.00, 0.74, 0.22)
+        row.guildButton.text:SetAllPoints(row.guildButton)
+        row.guildButton.text:SetJustifyH("LEFT")
+        row.guildButton:SetScript("OnEnter", function()
+            this.text:SetTextColor(1.00, 0.95, 0.55)
+            GameTooltip:SetOwner(this, "ANCHOR_TOP")
+            GameTooltip:SetText("Click to search /who for <" .. (this.guildName or "") .. ">")
+            GameTooltip:Show()
+        end)
+        row.guildButton:SetScript("OnLeave", function()
+            this.text:SetTextColor(1.00, 0.74, 0.22)
+            GameTooltip:Hide()
+        end)
+        row.guildButton:SetScript("OnClick", function() TB:OpenWorldGuildWho(this.guildName) end)
+
+        row.messageParts = {}
+        local partIndex
+        for partIndex = 1, 12 do
+            local part = CreateFrame("Button", nil, row)
+            part:SetHeight(20)
+            part.text = CreateText(part, "", "GameFontHighlightSmall", 0.92, 0.90, 0.84)
+            part.text:SetAllPoints(part)
+            part.text:SetJustifyH("LEFT")
+            part:SetScript("OnEnter", function()
                 if this.itemLink then
                     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
                     local hyperlink = TB:GetListingTooltipHyperlink({ itemLink = this.itemLink })
@@ -2062,8 +2093,8 @@ function TB:CreateWorldLogPane(parent)
                     GameTooltip:Show()
                 end
             end)
-            itemButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-            itemButton:SetScript("OnClick", function()
+            part:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            part:SetScript("OnClick", function()
                 if not this.itemLink then return end
                 if IsShiftKeyDown() and ChatFrameEditBox and ChatFrameEditBox:IsShown() then
                     ChatFrameEditBox:Insert(this.itemLink)
@@ -2072,7 +2103,7 @@ function TB:CreateWorldLogPane(parent)
                     if hyperlink then SetItemRef(hyperlink, this.itemLink, "LeftButton") end
                 end
             end)
-            row.itemButtons[itemIndex] = itemButton
+            row.messageParts[partIndex] = part
         end
         self.Frames.worldLogRows[i] = row
     end
@@ -2100,16 +2131,58 @@ function TB:UpdateWorldLog()
         local row = self.Frames.worldLogRows[i]
         if entry then
             local stamp = date and date("%m-%d %H:%M", entry.timestamp) or tostring(entry.timestamp)
-            local guild = entry.guild and entry.guild ~= "" and (" <" .. entry.guild .. ">") or ""
             local level = entry.level and (" L" .. entry.level) or " L?"
             local typeColor = entry.type == "WTS" and "66ff66" or (entry.type == "WTB" and "ffcc55" or "66ccff")
-            row.meta:SetText(stamp .. "  |cff" .. typeColor .. entry.type .. "|r  " .. entry.sender .. level .. guild)
-            row.message:SetText(entry.message)
-            local itemIndex
-            for itemIndex = 1, 3 do
-                local itemButton = row.itemButtons[itemIndex]
-                local link = entry.items and entry.items[itemIndex]
-                if link then itemButton.itemLink = link; itemButton.text:SetText(link); itemButton:Show() else itemButton.itemLink = nil; itemButton:Hide() end
+            row.metaPrefix:SetText(stamp .. "  |cff" .. typeColor .. entry.type .. "|r  ")
+            row.metaPrefix:SetWidth(row.metaPrefix:GetStringWidth() + 2)
+            row.senderButton:ClearAllPoints()
+            row.senderButton:SetPoint("LEFT", row.metaPrefix, "RIGHT", 0, 0)
+            row.senderButton.sender = entry.sender
+            row.senderButton.text:SetText(entry.sender or "Unknown")
+            row.senderButton:SetWidth(row.senderButton.text:GetStringWidth() + 2)
+            row.level:ClearAllPoints()
+            row.level:SetPoint("LEFT", row.senderButton, "RIGHT", 0, 0)
+            row.level:SetText(level)
+            row.level:SetWidth(row.level:GetStringWidth() + 4)
+            row.guildButton:ClearAllPoints()
+            row.guildButton:SetPoint("LEFT", row.level, "RIGHT", 0, 0)
+            if entry.guild and entry.guild ~= "" then
+                row.guildButton.guildName = entry.guild
+                row.guildButton.text:SetText("<" .. entry.guild .. ">")
+                row.guildButton:SetWidth(row.guildButton.text:GetStringWidth() + 2)
+                row.guildButton:Show()
+            else
+                row.guildButton.guildName = nil
+                row.guildButton:Hide()
+            end
+
+            local segments = self:GetWorldMessageSegments(entry.message)
+            local usedWidth = 0
+            local previousPart = nil
+            local partIndex
+            for partIndex = 1, 12 do
+                local part = row.messageParts[partIndex]
+                local segment = segments[partIndex]
+                part:ClearAllPoints()
+                if previousPart then
+                    part:SetPoint("LEFT", previousPart, "RIGHT", 0, 0)
+                else
+                    part:SetPoint("TOPLEFT", row, "TOPLEFT", 7, -23)
+                end
+                if segment and usedWidth < 882 then
+                    part.itemLink = segment.itemLink
+                    part.text:SetText(segment.text)
+                    local width = part.text:GetStringWidth() + 1
+                    if width > 882 - usedWidth then width = 882 - usedWidth end
+                    if width < 1 then width = 1 end
+                    part:SetWidth(width)
+                    usedWidth = usedWidth + width
+                    part:Show()
+                    previousPart = part
+                else
+                    part.itemLink = nil
+                    part:Hide()
+                end
             end
             row:Show()
         else
