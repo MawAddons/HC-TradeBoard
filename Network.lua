@@ -1077,7 +1077,7 @@ function TB:RefreshNetworkStatus()
     end
 end
 
-function TB:MarkPeer(sender, faction)
+function TB:MarkPeer(sender, faction, level, guild)
     if LowerName(sender) == LowerName(UnitName("player")) then
         return
     end
@@ -1086,7 +1086,10 @@ function TB:MarkPeer(sender, faction)
     if (not faction or faction == "") and existing then
         faction = existing.faction
     end
-    self.Network.peers[key] = { lastSeen = GetTime(), faction = faction }
+    level = tonumber(level) or (existing and existing.level)
+    if (not guild or guild == "") and existing then guild = existing.guild end
+    self.Network.peers[key] = { lastSeen = GetTime(), faction = faction, level = level, guild = guild or "" }
+    if level or (guild and guild ~= "") then self:RememberWorldPerson(sender, guild, level) end
     local myFaction = UnitFactionGroup("player")
     if faction and myFaction and faction ~= "" and faction ~= myFaction then
         self.Network.crossFactionSeen = 1
@@ -1216,6 +1219,7 @@ function TB:HandleListingMessage(fields, sender)
         lastSeenAt = self:GetWallTime(),
     }
     self:UpsertListing(listing)
+    self:RememberWorldPerson(sender, listing.guild, listing.traderLevel)
     self:SaveRemoteCache()
 end
 
@@ -1246,7 +1250,7 @@ function TB:HandleProtocolMessage(message, sender)
         if self.Network.pendingProbeResponse and self.Network.pendingProbeResponse.nonce == nonce then
             self.Network.pendingProbeResponse = nil
         end
-        self:MarkPeer(sender, fields[5])
+        self:MarkPeer(sender, fields[5], fields[6], self:UnescapeProtocol(fields[7] or ""))
     elseif operation == "Q" then
         local now = GetTime()
         if table.getn(self.MyListings) > 0 or table.getn(self.MyServices) > 0 or (TradeBoardDB and TradeBoardDB.myChain) then
@@ -1340,21 +1344,32 @@ function TB:ExpireRemoteData()
     end
 end
 
+function TB:CloseAddonWhoFrame()
+    if not self.closeWhoOnNextUpdate then return end
+    self.closeWhoOnNextUpdate = nil
+    if FriendsFrame and FriendsFrame:IsShown() then
+        if HideUIPanel then HideUIPanel(FriendsFrame) else FriendsFrame:Hide() end
+    end
+end
+
 function TB:NetworkOnUpdate()
     if not self.Network then
         return
     end
     local now = GetTime()
+    self:CloseAddonWhoFrame()
     if self.PendingWhoName and self.pendingWhoStarted and now - self.pendingWhoStarted > 12 then
         self.PendingWhoName = nil
+        self.addonWhoShouldClose = nil
     end
     if not self.PendingWhoName and self.WhoQueue and table.getn(self.WhoQueue) > 0
         and (not self.nextWhoLookup or now >= self.nextWhoLookup)
-        and (not WhoFrame or not WhoFrame:IsShown()) and SendWho then
+        and (not FriendsFrame or not FriendsFrame:IsShown()) and SendWho then
         local name = table.remove(self.WhoQueue, 1)
         self.PendingWhoName = string.lower(name)
         self.pendingWhoStarted = now
         self.nextWhoLookup = now + self.WHO_LOOKUP_INTERVAL
+        self.addonWhoShouldClose = 1
         if SetWhoToUI then SetWhoToUI(1) end
         SendWho('n-"' .. name .. '"')
     end
@@ -1375,7 +1390,7 @@ function TB:NetworkOnUpdate()
     if self.Network.pendingProbeResponse and now >= self.Network.pendingProbeResponse.due then
         local response = self.Network.pendingProbeResponse
         self.Network.pendingProbeResponse = nil
-        self:QueueMessage(self.PROTOCOL .. "~R~" .. response.nonce .. "~" .. self.VERSION .. "~" .. (UnitFactionGroup("player") or ""), 0)
+        self:QueueMessage(self.PROTOCOL .. "~R~" .. response.nonce .. "~" .. self.VERSION .. "~" .. (UnitFactionGroup("player") or "") .. "~" .. tostring(self:GetPlayerLevel()) .. "~" .. self:EscapeProtocol(self:GetPlayerGuildName()), 0)
     end
 
     if self.Network.probeDeadline and now >= self.Network.probeDeadline then
@@ -1457,14 +1472,16 @@ function TB:NetworkOnEvent(eventName, one, two, three, four, five, six, seven, e
             self:HandleProtocolMessage(one, two)
         end
     elseif eventName == "WHO_LIST_UPDATE" then
-        if GetNumWhoResults and GetWhoInfo then
+        if self.PendingWhoName and GetNumWhoResults and GetWhoInfo then
             local i
             for i = 1, GetNumWhoResults() do
                 local name, guild, level = GetWhoInfo(i)
-                self:ApplyWhoResult(name, guild, level)
+                self:RememberWorldPerson(name, guild, level)
             end
         end
         self.PendingWhoName = nil
+        if self.addonWhoShouldClose then self.closeWhoOnNextUpdate = 1 end
+        self.addonWhoShouldClose = nil
         if self.UpdateWorldLog then self:UpdateWorldLog() end
     elseif eventName == "CHAT_MSG_CHANNEL_NOTICE" then
         if one == "YOU_JOINED" and nine and string.upper(nine) == string.upper(self.CHANNEL_NAME) then

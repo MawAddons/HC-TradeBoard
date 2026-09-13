@@ -380,7 +380,7 @@ end
 
 function TB:CreateTabs(parent)
     self.Frames.tabs = {}
-    local names = { "Browse", "My Listings", "Trade Chains", "Professions", "World WTS/LFW" }
+    local names = { "Browse", "My Listings", "Trade Chains", "Professions", "World Trade" }
     local widths = { 112, 132, 132, 124, 148 }
     local x = 24
     local i
@@ -1978,7 +1978,7 @@ function TB:CreateWorldLogPane(parent)
     pane:Hide()
     self.Frames.worldLogPane = pane
 
-    local title = CreateText(pane, "World WTS / LFW", "GameFontNormalLarge", 1.00, 0.78, 0.20)
+    local title = CreateText(pane, "World WTS / WTB / LFW", "GameFontNormalLarge", 1.00, 0.78, 0.20)
     title:SetPoint("TOPLEFT", pane, "TOPLEFT", 8, -8)
     local subtitle = CreateText(pane, "Local World-channel archive for sales and crafting offers. Idea credit: Svenne :) | Saved across characters.", "GameFontHighlightSmall", 0.70, 0.67, 0.58)
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -5)
@@ -1997,13 +1997,13 @@ function TB:CreateWorldLogPane(parent)
     searchHint:SetPoint("LEFT", search, "RIGHT", 10, 0)
 
     self.Frames.worldTypeButtons = {}
-    local types = { { "All", "ALL" }, { "WTS", "WTS" }, { "LFW", "LFW" } }
+    local types = { { "All", "ALL" }, { "WTS", "WTS" }, { "WTB", "WTB" }, { "LFW", "LFW" } }
     local previous = nil
     local i
     for i = 1, table.getn(types) do
         local value = types[i][2]
         local button = CreateButton(pane, types[i][1], 64, 27)
-        if previous then button:SetPoint("LEFT", previous, "RIGHT", 6, 0) else button:SetPoint("TOPRIGHT", pane, "TOPRIGHT", -140, -50) end
+        if previous then button:SetPoint("LEFT", previous, "RIGHT", 6, 0) else button:SetPoint("TOPRIGHT", pane, "TOPRIGHT", -274, -50) end
         button:SetScript("OnClick", function()
             TB.State.worldType = value
             TB.State.worldOffset = 0
@@ -2102,7 +2102,8 @@ function TB:UpdateWorldLog()
             local stamp = date and date("%m-%d %H:%M", entry.timestamp) or tostring(entry.timestamp)
             local guild = entry.guild and entry.guild ~= "" and (" <" .. entry.guild .. ">") or ""
             local level = entry.level and (" L" .. entry.level) or " L?"
-            row.meta:SetText(stamp .. "  |cff" .. (entry.type == "WTS" and "66ff66" or "66ccff") .. entry.type .. "|r  " .. entry.sender .. level .. guild)
+            local typeColor = entry.type == "WTS" and "66ff66" or (entry.type == "WTB" and "ffcc55" or "66ccff")
+            row.meta:SetText(stamp .. "  |cff" .. typeColor .. entry.type .. "|r  " .. entry.sender .. level .. guild)
             row.message:SetText(entry.message)
             local itemIndex
             for itemIndex = 1, 3 do

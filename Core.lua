@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.5.0"
+TradeBoard.VERSION = "0.5.1"
 TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
 TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffa335eeTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 7
@@ -186,6 +186,7 @@ end
 
 function TradeBoard:GetWorldMessageType(message)
     local padded = " " .. string.upper(message or "") .. " "
+    if string.find(padded, "[%s%p]WTB[%s%p]") then return "WTB" end
     if string.find(padded, "[%s%p]WTS[%s%p]") then return "WTS" end
     if string.find(padded, "[%s%p]LFW[%s%p]") then return "LFW" end
     return nil
@@ -209,6 +210,12 @@ function TradeBoard:GetKnownTraderInfo(name)
     if TradeBoardDB and TradeBoardDB.worldPeople and TradeBoardDB.worldPeople[key] then
         local person = TradeBoardDB.worldPeople[key]
         return tonumber(person.level), person.guild or ""
+    end
+    if self.Network and self.Network.peers and self.Network.peers[key] then
+        local peer = self.Network.peers[key]
+        if peer.level or (peer.guild and peer.guild ~= "") then
+            return tonumber(peer.level), peer.guild or ""
+        end
     end
     local i
     for i = 1, table.getn(self.Listings) do
@@ -243,7 +250,7 @@ function TradeBoard:QueueWhoLookup(name)
     local key = string.lower(name)
     if TradeBoardDB.worldPeople[key] or self.PendingWhoName == key then return end
     local i
-    for i = 1, table.getn(self.WhoQueue) do if self.WhoQueue[i] == name then return end end
+    for i = 1, table.getn(self.WhoQueue) do if string.lower(self.WhoQueue[i]) == key then return end end
     table.insert(self.WhoQueue, name)
 end
 
@@ -264,8 +271,9 @@ function TradeBoard:CaptureWorldMessage(message, sender, channelName)
     if self.UpdateWorldLog then self:UpdateWorldLog() end
 end
 
-function TradeBoard:ApplyWhoResult(name, guild, level)
+function TradeBoard:RememberWorldPerson(name, guild, level)
     if not name or name == "" then return end
+    if not self.WorldLog or not TradeBoardDB or not TradeBoardDB.worldPeople then self:InitializeWorldLog() end
     local key = string.lower(name)
     TradeBoardDB.worldPeople[key] = { guild = guild or "", level = tonumber(level), seenAt = self:GetWallTime() }
     local i
