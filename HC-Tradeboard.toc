@@ -1,6 +1,6 @@
 ## Interface: 11200
 ## Title: |cffb8c0ccHC|r |cffa335eeTradeBoard|r
-## Notes: A peersync TradeBoard for the HC Community where there is no AH available.
+## Notes: v0.6.1: a cozy little marketplace for heroes without an auction house
 ## Author: OctoWow Community
 ## Version: 0.6.1
 ## SavedVariables: TradeBoardDB
