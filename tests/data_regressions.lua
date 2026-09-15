@@ -216,5 +216,60 @@ test("Repeated cache misses are bounded and resolve after retry", function()
     GetItemInfo = originalGetItemInfo
 end)
 
+test("WTS item offers expire at three hours while services, WTB and archive remain", function()
+    reset()
+    local postedAt = wallNow
+    TB:CaptureWorldMessage("wTs " .. ringLink, "Seller", "World")
+    local sale = TB.Listings[1]
+    TB:CaptureWorldMessage("WTS Crusader enchants", "Crafter", "Trade")
+    TB:CaptureWorldMessage("WTB " .. mailLink, "Buyer", "World")
+    local wanted = TB.Listings[2]
+    TB:UpsertListing({ owner = "Manual", trader = "Manual", id = "manual", itemLink = ringLink, isMine = 1 })
+    assert(sale.expiresAt == postedAt + 10800, "WTS expiry is not measured from original post")
+    assert(wanted.expiresAt == postedAt + 43200 and TB.Services[1].expiresAt == postedAt + 43200, "non-WTS/service lifetime was shortened")
+    wallNow = postedAt + 10799
+    TB:ExpireRemoteData()
+    assert(table.getn(TB.Listings) == 3, "WTS item expired before three hours")
+    wallNow = postedAt + 10800
+    TB:ExpireRemoteData(); TB:PruneWorldLog()
+    assert(table.getn(TB.Listings) == 2 and not TB.ListingIndex[TB:GetListingKey("Seller", sale.id)], "WTS item survived three-hour cleanup")
+    assert(table.getn(TB.Services) == 1 and table.getn(TB.WorldLog) == 3, "cleanup removed services or chat archive early")
+    wallNow = postedAt
+end)
+
+test("Login rebuilding the twelve-hour archive never resurrects expired WTS items", function()
+    reset()
+    local postedAt = wallNow
+    TB:CaptureWorldMessage("WTS " .. ringLink, "Seller", "Trade")
+    TB:CaptureWorldMessage("WTS Crusader enchant " .. mailLink, "Crafter", "World")
+    -- Simulate an old version's derived 12-hour offers being rebuilt on login.
+    TB.Listings[1].expiresAt = postedAt + 43200
+    wallNow = postedAt + 10800
+    TB.WorldLog = nil; TB.worldLogInitialized = nil
+    TB:InitializeWorldLog()
+    assert(table.getn(TB.Listings) == 0, "login restored expired WTS items")
+    assert(table.getn(TB.WorldLog) == 2 and table.getn(TB.Services) == 1, "login lost archive or still-active profession offer")
+    assert(TB.Services[1].expiresAt == postedAt + 43200, "rebuild extended service lifetime")
+    wallNow = postedAt
+end)
+
+test("Old peer WTS snapshots stay archived without restarting the Browse lifetime", function()
+    reset()
+    local function receive(id, age)
+        local entry = {
+            id = id, timestamp = wallNow - age, type = "WTS", channel = "World", sender = "PeerSeller",
+            message = "WTS Crusader enchant " .. ringLink,
+        }
+        local fields, field = {}, nil
+        for field in string.gfind(TB:BuildWorldMessage(entry) .. "~", "(.-)~") do table.insert(fields, field) end
+        TB:HandleWorldMessage(fields, "Relay")
+    end
+    receive("old", 10800)
+    assert(table.getn(TB.WorldLog) == 1 and table.getn(TB.Services) == 1, "old peer snapshot was not archived with its active service")
+    assert(table.getn(TB.Listings) == 0, "peer replay resurrected expired item")
+    receive("recent", 7200)
+    assert(table.getn(TB.Listings) == 1 and TB.Listings[1].expiresAt == wallNow + 3600, "peer receipt restarted full three-hour lifetime")
+end)
+
 assert(table.getn(failures) == 0, table.concat(failures, "\n"))
 print("HC TradeBoard data regression tests passed")

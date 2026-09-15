@@ -1,4 +1,4 @@
-# HC TradeBoard 0.7.0
+# HC TradeBoard 0.7.1
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -41,7 +41,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - A searchable World and Trade-channel archive retaining up to twelve hours and the newest 500 case-insensitive WTS, WTB, and LFW posts. It is shared with peers using duplicate suppression and includes inline hoverable/clickable item links. Idea credit: Svenne :)
 - No automatic `/who` calls. Sellers with unknown levels have a `?` button for a player-initiated visible Who lookup. All lookup buttons share a 30-second countdown; buttons disappear once the level is known. Matching level, class, and guild data is shared across tabs and peers.
 - Guild give/sell offers with item links open a dismissible, draggable loot popup. Item-only followups from that guildmate within 60 seconds join the offer. Queues and duplicate detection are bounded, and the feature sends no additional chat or peer traffic.
-- Item-linked WTS/WTB chat messages appear as expiring **Chat** offers in Browse. Recognized crafting offers such as Crusader appear as expiring, clearly labelled **Chat** services in Professions.
+- Item-linked WTS/WTB chat messages appear as **Chat** offers in Browse. WTS item offers expire three hours after the original message, including those received from peers. WTB offers and recognized **Chat** services in Professions retain their twelve-hour lifetime. The World/Trade archive also remains twelve hours; rebuilding it never restores expired WTS offers.
 - A classic minimap coin button for opening and closing HC TradeBoard.
 - Search, category, rarity, trader-level, online, listing-type, and item-level filters.
 - Simple Armor and Weapons subcategories without the full Auction House category tree.
@@ -75,7 +75,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - Listings are an advertisement only. HC TradeBoard does not move items, money, or automate trades.
 - Remote listings and profession services are cached locally and become offline after ten minutes without a refresh. They remain until an explicit withdrawal is received or the saved cache is cleared, so an undelivered withdrawal can leave an old offline advertisement visible.
 - Version 0.6.0 uses the `TB2` protocol because listing prices changed from per-item to total price. Peers must update to 0.6.0 or newer to exchange data.
-- Chat-offer parsing is deliberately conservative: Browse requires a real item link, profession imports require a recognized service keyword, and quantity/price extraction is best effort. Chat-derived entries are visibly labelled and expire after twelve hours.
+- Chat classification uses independent rules: Browse requires a real item link, while WTS/LFW profession imports use the first matching keyword (e.g. crusader, enchant, arcanite, transmute, mooncloth). A message can produce both an item offer and a service, and keywords inside item names can cause false service matches. Quantity/price extraction is best effort. WTS item offers expire after three hours; profession services and other chat-derived entries expire after twelve hours.
 - SavedVariables are shared by characters on one WoW account. Separate accounts share the World/Trade archive and Who-derived data only while their clients can meet through the peer channel.
 - The first live build publishes sale listings. Wanted-order creation is planned but not yet in the posting form.
 

@@ -292,8 +292,13 @@ function TB:ImportWorldEntry(entry)
     local person = TradeBoardDB and TradeBoardDB.worldPeople and TradeBoardDB.worldPeople[LowerName(entry.sender)] or nil
     local quantity = self:ParseChatQuantity(entry.message)
     local totalPrice = self:ParseChatPrice(entry.message, quantity)
+    local itemExpiresAt = entry.timestamp + (entry.type == "WTS" and self.CHAT_WTS_TTL or self.WORLD_LOG_TTL)
+    local itemCount = table.getn(entry.items or {})
+    -- The archive outlives WTS items. Login rebuilds and peer snapshots must
+    -- not recreate expired Browse offers, while services retain their own TTL.
+    if self:GetWallTime() >= itemExpiresAt then itemCount = 0 end
     local i
-    for i = 1, table.getn(entry.items or {}) do
+    for i = 1, itemCount do
         local link = entry.items[i]
         local data = self:GetItemMetadata(link) or {}
         self:UpsertListing({
@@ -306,7 +311,7 @@ function TB:ImportWorldEntry(entry)
             traderLevel = tonumber(entry.level) or (person and person.level) or 0,
             orderType = entry.type == "WTB" and "BUY" or "SELL", category = data.category or "Miscellaneous",
             tags = CopyTags(data.tags), online = 1, lastSeen = GetTime(),
-            lastSeenAt = entry.timestamp, expiresAt = entry.timestamp + self.WORLD_LOG_TTL,
+            lastSeenAt = entry.timestamp, expiresAt = itemExpiresAt,
             source = "CHAT", channel = entry.channel,
         })
     end
