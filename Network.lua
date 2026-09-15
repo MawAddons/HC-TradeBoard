@@ -1,7 +1,9 @@
 local TB = TradeBoard
 
 local QUESTION_TEXTURE = "Interface\\Icons\\INV_Misc_QuestionMark"
-local SEND_DELAY = 0.75
+local SEND_DELAY = 2.0
+local WORLD_SEND_DELAY = 8.0
+local MAX_SEND_QUEUE = 80
 
 local function LowerName(name)
     return string.lower(name or "")
@@ -168,6 +170,93 @@ function TB:GetItemTags(category, subType)
         end
     end
     return tags
+end
+
+function TB:ParseChatQuantity(message)
+    local _, _, amount = string.find(message or "", "[xX](%d+)")
+    if not amount then _, _, amount = string.find(message or "", "(%d+)%s*[xX]") end
+    amount = tonumber(amount) or 1
+    if amount < 1 then amount = 1 elseif amount > 1000 then amount = 1000 end
+    return amount
+end
+
+function TB:ParseChatPrice(message, quantity)
+    local lower = string.lower(message or "")
+    local gold, silver, copper = 0, 0, 0
+    local _, _, value = string.find(lower, "(%d+%.?%d*)%s*g")
+    gold = tonumber(value) or 0
+    _, _, value = string.find(lower, "(%d+)%s*s")
+    silver = tonumber(value) or 0
+    _, _, value = string.find(lower, "(%d+)%s*c")
+    copper = tonumber(value) or 0
+    local price = math.floor((gold * 10000) + (silver * 100) + copper)
+    if price > 0 and (string.find(lower, "each", 1, 1) or string.find(lower, " ea", 1, 1)) then
+        price = price * (quantity or 1)
+    end
+    return price
+end
+
+function TB:InferChatProfession(message)
+    local lower = string.lower(message or "")
+    local rules = {
+        { "crusader", "Enchanting" }, { "fiery weapon", "Enchanting" }, { "enchant", "Enchanting" },
+        { "arcanite", "Alchemy" }, { "transmute", "Alchemy" }, { "alchemy", "Alchemy" },
+        { "mooncloth", "Tailoring" }, { "tailor", "Tailoring" },
+        { "blacksmith", "Blacksmithing" }, { "engineering", "Engineering" },
+        { "leatherwork", "Leatherworking" }, { "herbal", "Herbalism" },
+        { "mining", "Mining" }, { "skinning", "Skinning" }, { "cooking", "Cooking" },
+        { "first aid", "First Aid" },
+    }
+    local i
+    for i = 1, table.getn(rules) do if string.find(lower, rules[i][1], 1, 1) then return rules[i][2] end end
+    return nil
+end
+
+function TB:ImportWorldEntry(entry)
+    if not entry or not entry.id then return end
+    local person = TradeBoardDB and TradeBoardDB.worldPeople and TradeBoardDB.worldPeople[LowerName(entry.sender)] or nil
+    local quantity = self:ParseChatQuantity(entry.message)
+    local totalPrice = self:ParseChatPrice(entry.message, quantity)
+    local i
+    for i = 1, table.getn(entry.items or {}) do
+        local link = entry.items[i]
+        local name, canonicalLink, quality, itemLevel, requiredLevel, itemType, subType, maxStack, equipLocation, texture = GetItemInfo(link)
+        local category = self:GetItemCategory(itemType)
+        self:UpsertListing({
+            id = "chat:" .. entry.id .. ":" .. i, owner = entry.sender, trader = entry.sender,
+            guild = entry.guild or (person and person.guild) or "", class = entry.class or (person and person.class) or "",
+            itemID = self:ExtractItemID(link), itemLink = canonicalLink or link, name = name or self:ExtractItemName(link),
+            texture = texture or QUESTION_TEXTURE, quality = self:NormalizeQuality(quality or 1),
+            requiredLevel = tonumber(requiredLevel) or 0, itemLevel = tonumber(itemLevel) or 0,
+            quantity = quantity, totalPrice = totalPrice, priceKnown = totalPrice > 0 and 1 or nil,
+            traderLevel = tonumber(entry.level) or (person and person.level) or 0,
+            orderType = entry.type == "WTB" and "BUY" or "SELL", category = category,
+            tags = self:GetItemTags(category, subType), online = 1, lastSeen = GetTime(),
+            lastSeenAt = entry.timestamp, expiresAt = entry.timestamp + self.WORLD_LOG_TTL,
+            source = "CHAT", channel = entry.channel,
+        })
+    end
+    if entry.type ~= "WTB" then
+        local profession = self:InferChatProfession(entry.message)
+        if profession then
+            self:UpsertService({
+                owner = entry.sender, trader = entry.sender, guild = entry.guild or (person and person.guild) or "",
+                class = entry.class or (person and person.class) or "", level = tonumber(entry.level) or (person and person.level) or 0,
+                profession = profession, rank = 0, maxRank = 0, note = entry.message or "",
+                online = 1, lastSeen = GetTime(), lastSeenAt = entry.timestamp,
+                expiresAt = entry.timestamp + self.WORLD_LOG_TTL, source = "CHAT", channel = entry.channel,
+            })
+        end
+    end
+end
+
+function TB:RebuildChatOffers()
+    local i
+    for i = table.getn(self.Listings), 1, -1 do if self.Listings[i].source == "CHAT" then table.remove(self.Listings, i) end end
+    self:RebuildListingIndex()
+    for i = table.getn(self.Services), 1, -1 do if self.Services[i].source == "CHAT" then table.remove(self.Services, i) end end
+    self:RebuildServiceIndex()
+    for i = 1, table.getn(self.WorldLog or {}) do self:ImportWorldEntry(self.WorldLog[i]) end
 end
 
 function TB:EncodeTags(tags)
@@ -390,13 +479,15 @@ function TB:LoadSavedListings()
                 listing.tags.Ranged = 1
             end
             listing.quality = self:NormalizeQuality(listing.quality)
+            if listing.totalPrice == nil then listing.totalPrice = (tonumber(listing.unitPrice) or 0) * (tonumber(listing.quantity) or 1) end
+            listing.unitPrice = nil
             table.insert(self.MyListings, listing)
             self:UpsertListing(listing)
         end
     end
 end
 
-function TB:CreateMyListing(quantity, unitPrice)
+function TB:CreateMyListing(quantity, totalPrice)
     local pending = self.PendingListing
     if not pending then
         self:SetStatus("Choose an item from your bags first.")
@@ -423,7 +514,7 @@ function TB:CreateMyListing(quantity, unitPrice)
     end
     pending.availableQuantity = availableNow
     quantity = tonumber(quantity) or 0
-    unitPrice = tonumber(unitPrice) or 0
+    totalPrice = tonumber(totalPrice) or 0
     if quantity < 1 or quantity > pending.availableQuantity then
         if self.UpdateListingEditor then
             self:UpdateListingEditor()
@@ -431,8 +522,8 @@ function TB:CreateMyListing(quantity, unitPrice)
         self:SetStatus("Quantity must be between 1 and " .. pending.availableQuantity .. ".")
         return nil
     end
-    if unitPrice < 1 then
-        self:SetStatus("Set a unit price before listing the item.")
+    if totalPrice < 1 then
+        self:SetStatus("Set a total price before listing the item.")
         return nil
     end
     if not TradeBoardDB then
@@ -454,7 +545,7 @@ function TB:CreateMyListing(quantity, unitPrice)
         itemLevel = pending.itemLevel,
         requiredLevel = pending.requiredLevel,
         quantity = quantity,
-        unitPrice = unitPrice,
+        totalPrice = totalPrice,
         category = pending.category,
         tags = CopyTags(pending.tags),
         orderType = "SELL",
@@ -481,7 +572,7 @@ function TB:CreateMyListing(quantity, unitPrice)
     if self.UpdateBrowse then
         self:UpdateBrowse()
     end
-    local status = "Listed " .. listing.name .. " for " .. self:FormatMoney(unitPrice) .. " each."
+    local status = "Listed " .. listing.name .. " for " .. self:FormatMoney(totalPrice) .. " total."
     if not self:IsListingVisible(listing) then
         status = status .. " Your current Browse filters hide it."
     end
@@ -498,7 +589,8 @@ function TB:DeleteMyListing(id)
             table.remove(self.MyListings, i)
             self:RemoveListing(UnitName("player"), id)
             self:SaveMyListings()
-            self:QueueMessage(self.PROTOCOL .. "~D~" .. self:EscapeProtocol(id), 0)
+            self:CancelQueuedKey("listing:" .. tostring(id))
+            self:QueueMessage(self.PROTOCOL .. "~D~" .. self:EscapeProtocol(id), 0, "delete-listing:" .. tostring(id))
             self.State.selectedMyListing = nil
             if self.UpdateMyListings then
                 self:UpdateMyListings()
@@ -522,7 +614,7 @@ function TB:BuildListingMessage(listing, omitTexture, omitGuild)
         tostring(listing.requiredLevel or 0) .. "~" ..
         tostring(listing.itemLevel or 0) .. "~" ..
         tostring(listing.quantity or 1) .. "~" ..
-        tostring(listing.unitPrice or 0) .. "~" ..
+        tostring(listing.totalPrice or 0) .. "~" ..
         tostring(listing.traderLevel or 1) .. "~" ..
         tostring(listing.orderType or "SELL") .. "~" ..
         self:EscapeProtocol(listing.category or "Miscellaneous") .. "~" ..
@@ -547,7 +639,7 @@ function TB:QueueListingAnnouncement(listing, delay)
     if string.len(message) > 250 then
         message = self:BuildListingMessage(listing, 1, 1)
     end
-    self:QueueMessage(message, delay or 0)
+    self:QueueMessage(message, delay or 0, "listing:" .. tostring(listing.id or ""))
 end
 
 function TB:IsSupportedProfession(name)
@@ -577,8 +669,8 @@ function TB:RefreshKnownProfessions()
     return self.KnownProfessions
 end
 
-function TB:GetServiceKey(owner, profession)
-    return LowerName(owner) .. "~" .. string.lower(profession or "")
+function TB:GetServiceKey(owner, profession, source)
+    return LowerName(owner) .. "~" .. string.lower(profession or "") .. "~" .. (source == "CHAT" and "chat" or "published")
 end
 
 function TB:RebuildServiceIndex()
@@ -586,12 +678,12 @@ function TB:RebuildServiceIndex()
     local i
     for i = 1, table.getn(self.Services) do
         local service = self.Services[i]
-        self.ServiceIndex[self:GetServiceKey(service.owner, service.profession)] = i
+        self.ServiceIndex[self:GetServiceKey(service.owner, service.profession, service.source)] = i
     end
 end
 
 function TB:UpsertService(service)
-    local key = self:GetServiceKey(service.owner, service.profession)
+    local key = self:GetServiceKey(service.owner, service.profession, service.source)
     local index = self.ServiceIndex[key]
     if index then
         self.Services[index] = service
@@ -605,7 +697,7 @@ function TB:RemoveServices(owner)
     local changed = nil
     local i
     for i = table.getn(self.Services), 1, -1 do
-        if LowerName(self.Services[i].owner) == LowerName(owner) then
+        if LowerName(self.Services[i].owner) == LowerName(owner) and self.Services[i].source ~= "CHAT" then
             if self.State.selectedService == self.Services[i] then
                 self.State.selectedService = nil
             end
@@ -803,7 +895,7 @@ function TB:HandleServiceMessage(fields, sender)
     if not self:IsSupportedProfession(profession) then
         return
     end
-    local existing = self.ServiceIndex[self:GetServiceKey(sender, profession)]
+    local existing = self.ServiceIndex[self:GetServiceKey(sender, profession, nil)]
     existing = existing and self.Services[existing] or nil
     local guild = self:UnescapeProtocol(fields[7] or "")
     local service = {
@@ -832,13 +924,13 @@ function TB:SaveRemoteCache()
     local i
     for i = 1, table.getn(self.Listings) do
         local listing = self.Listings[i]
-        if not listing.isMine and LowerName(listing.owner) ~= playerName then
+        if not listing.isMine and listing.source ~= "CHAT" and LowerName(listing.owner) ~= playerName then
             table.insert(listings, listing)
         end
     end
     for i = 1, table.getn(self.Services) do
         local service = self.Services[i]
-        if not service.isMine and LowerName(service.owner) ~= playerName then
+        if not service.isMine and service.source ~= "CHAT" and LowerName(service.owner) ~= playerName then
             table.insert(services, service)
         end
     end
@@ -861,7 +953,9 @@ function TB:LoadRemoteCache()
             listing.requiredLevel = tonumber(listing.requiredLevel) or 0
             listing.itemLevel = tonumber(listing.itemLevel) or 0
             listing.quantity = tonumber(listing.quantity) or 1
-            listing.unitPrice = tonumber(listing.unitPrice) or 0
+            if listing.totalPrice == nil then listing.totalPrice = (tonumber(listing.unitPrice) or 0) * (tonumber(listing.quantity) or 1) end
+            listing.totalPrice = tonumber(listing.totalPrice) or 0
+            listing.unitPrice = nil
             listing.traderLevel = tonumber(listing.traderLevel) or 1
             listing.tags = CopyTags(listing.tags)
             listing.online = nil
@@ -989,7 +1083,7 @@ function TB:BuildChainMessage(chain)
 end
 
 function TB:QueueChainAnnouncement(chain, delay)
-    self:QueueMessage(self:BuildChainMessage(chain), delay or 0)
+    self:QueueMessage(self:BuildChainMessage(chain), delay or 0, "chain")
 end
 
 function TB:QueueMessage(message, delay, queueKey)
@@ -1007,13 +1101,107 @@ function TB:QueueMessage(message, delay, queueKey)
             local queued = self.SendQueue[i]
             if queued.key == queueKey then
                 queued.message = message
-                queued.due = due
+                if due < queued.due then queued.due = due end
                 return 1
             end
         end
     end
+    if table.getn(self.SendQueue) >= MAX_SEND_QUEUE then
+        self:SetStatus("Network queue is full; duplicate background data was dropped safely.")
+        return nil
+    end
     table.insert(self.SendQueue, { message = message, due = due, key = queueKey })
     return 1
+end
+
+function TB:CancelQueuedKey(queueKey)
+    if not self.SendQueue or not queueKey then return end
+    local i
+    for i = table.getn(self.SendQueue), 1, -1 do
+        if self.SendQueue[i].key == queueKey then table.remove(self.SendQueue, i) end
+    end
+end
+
+function TB:BuildWorldMessage(entry)
+    return self.PROTOCOL .. "~W~" .. self:EscapeProtocol(entry.id) .. "~" ..
+        tostring(entry.timestamp or self:GetWallTime()) .. "~" .. tostring(entry.type or "WTS") .. "~" ..
+        tostring(entry.channel or "World") .. "~" .. self:EscapeProtocol(entry.sender or "Unknown") .. "~" ..
+        tostring(entry.level or 0) .. "~" .. self:EscapeProtocol(entry.class or "") .. "~" ..
+        self:EscapeProtocol(entry.guild or "") .. "~" .. self:EscapeProtocol(entry.message or "")
+end
+
+function TB:QueueWorldAnnouncement(entry, delay)
+    if not entry or not entry.id then return end
+    local message = self:BuildWorldMessage(entry)
+    if string.len(message) <= 250 then
+        local due = GetTime() + (delay or 0)
+        if self.Network and self.Network.nextWorldShareDue and due < self.Network.nextWorldShareDue then due = self.Network.nextWorldShareDue end
+        if self.Network then self.Network.nextWorldShareDue = due + WORLD_SEND_DELAY end
+        self:QueueMessage(message, due - GetTime(), "world:" .. entry.id)
+    end
+end
+
+function TB:QueueIdentityAnnouncement(name, level, class, guild, verifiedAt, delay)
+    if not name or name == "" then return end
+    local message = self.PROTOCOL .. "~I~" .. self:EscapeProtocol(name) .. "~" .. tostring(level or 0) .. "~" ..
+        self:EscapeProtocol(class or "") .. "~" .. self:EscapeProtocol(guild or "") .. "~" .. tostring(verifiedAt or self:GetWallTime())
+    self:QueueMessage(message, delay or 0, "identity:" .. LowerName(name))
+end
+
+function TB:QueueSharedSnapshots(baseDelay)
+    local delay = baseDelay or 8
+    local first = table.getn(self.WorldLog or {}) - 11
+    if first < 1 then first = 1 end
+    local i
+    for i = first, table.getn(self.WorldLog or {}) do
+        self:QueueWorldAnnouncement(self.WorldLog[i], delay + (math.random() * 8))
+        delay = delay + SEND_DELAY
+    end
+    local identities = {}
+    local name, person
+    for name, person in pairs((TradeBoardDB and TradeBoardDB.worldPeople) or {}) do
+        table.insert(identities, { name = name, person = person })
+    end
+    table.sort(identities, function(a, b) return (a.person.seenAt or 0) > (b.person.seenAt or 0) end)
+    local limit = table.getn(identities)
+    if limit > 8 then limit = 8 end
+    for i = 1, limit do
+        person = identities[i].person
+        self:QueueIdentityAnnouncement(person.name or identities[i].name, person.level, person.class, person.guild, person.seenAt, delay + (math.random() * 8))
+        delay = delay + SEND_DELAY
+    end
+end
+
+function TB:HandleWorldMessage(fields, peerSender)
+    local entry = {
+        id = self:UnescapeProtocol(fields[3] or ""), timestamp = tonumber(fields[4]) or 0,
+        type = fields[5], channel = fields[6], sender = self:UnescapeProtocol(fields[7] or ""),
+        level = tonumber(fields[8]) or 0, class = self:UnescapeProtocol(fields[9] or ""),
+        guild = self:UnescapeProtocol(fields[10] or ""), message = self:UnescapeProtocol(fields[11] or ""),
+        source = "PEER", relayPeer = peerSender,
+    }
+    if entry.id == "" or entry.sender == "" or (entry.type ~= "WTS" and entry.type ~= "WTB" and entry.type ~= "LFW") then return end
+    if entry.channel ~= "World" and entry.channel ~= "Trade" then return end
+    if entry.timestamp < self:GetWallTime() - self.WORLD_LOG_TTL then return end
+    self:InitializeWorldLog()
+    self:CancelQueuedKey("world:" .. entry.id)
+    local i
+    for i = 1, table.getn(self.WorldLog) do if self.WorldLog[i].id == entry.id then return end end
+    entry.items = self:ExtractWorldItemLinks(entry.message)
+    table.insert(self.WorldLog, entry)
+    self:PruneWorldLog()
+    self:RememberWorldPerson(entry.sender, entry.guild, entry.level, entry.class, entry.timestamp)
+    self:ImportWorldEntry(entry)
+end
+
+function TB:HandleIdentityMessage(fields)
+    local name = self:UnescapeProtocol(fields[3] or "")
+    local verifiedAt = tonumber(fields[7]) or 0
+    if name == "" or verifiedAt < self:GetWallTime() - 86400 then return end
+    self:CancelQueuedKey("identity:" .. LowerName(name))
+    local existing = TradeBoardDB and TradeBoardDB.worldPeople and TradeBoardDB.worldPeople[LowerName(name)]
+    if existing and (tonumber(existing.seenAt) or 0) >= verifiedAt then return end
+    self:RememberWorldPerson(name, self:UnescapeProtocol(fields[6] or ""), tonumber(fields[4]), self:UnescapeProtocol(fields[5] or ""), verifiedAt)
 end
 
 function TB:HideNetworkChannel()
@@ -1107,6 +1295,7 @@ function TB:SendQueuedMessage()
         return
     end
     local now = GetTime()
+    if self.Network.userChatQuietUntil and now < self.Network.userChatQuietUntil then return end
     if self.Network.lastSend and now - self.Network.lastSend < SEND_DELAY then
         return
     end
@@ -1163,14 +1352,16 @@ function TB:ProbeAndSync()
         self:JoinNetworkChannel()
         return
     end
+    local now = GetTime()
+    if self.Network.lastProbeAt and now - self.Network.lastProbeAt < 30 then return end
+    self.Network.lastProbeAt = now
     self.Network.probeCounter = self.Network.probeCounter + 1
     local nonce = tostring(self.Network.probeCounter) .. tostring(math.floor(GetTime()))
     self.Network.probeNonce = nonce
     self.Network.probeDeadline = GetTime() + 8
     self.Network.state = "PROBING"
-    self:QueueMessage(self.PROTOCOL .. "~P~" .. nonce, 0)
-    self:QueueMessage(self.PROTOCOL .. "~Q~" .. nonce, 1)
-    self:QueueOwnData(2)
+    self:QueueMessage(self.PROTOCOL .. "~P~" .. nonce, 0, "probe")
+    self:QueueMessage(self.PROTOCOL .. "~Q~" .. nonce, SEND_DELAY, "sync-query")
     self:RefreshNetworkStatus()
 end
 
@@ -1209,7 +1400,7 @@ function TB:HandleListingMessage(fields, sender)
         requiredLevel = tonumber(fields[6]) or cachedRequired or 0,
         itemLevel = tonumber(fields[7]) or cachedItemLevel or 0,
         quantity = tonumber(fields[8]) or 1,
-        unitPrice = tonumber(fields[9]) or 0,
+        totalPrice = tonumber(fields[9]) or 0,
         traderLevel = tonumber(fields[10]) or 1,
         orderType = fields[11] == "BUY" and "BUY" or "SELL",
         category = self:UnescapeProtocol(fields[12] or "Miscellaneous"),
@@ -1253,10 +1444,14 @@ function TB:HandleProtocolMessage(message, sender)
         self:MarkPeer(sender, fields[5], fields[6], self:UnescapeProtocol(fields[7] or ""))
     elseif operation == "Q" then
         local now = GetTime()
-        if table.getn(self.MyListings) > 0 or table.getn(self.MyServices) > 0 or (TradeBoardDB and TradeBoardDB.myChain) then
-            if not self.Network.lastQueryReply or now - self.Network.lastQueryReply > 12 then
-                self.Network.lastQueryReply = now
-                self:QueueOwnData(2 + (math.random() * 18))
+        if table.getn(self.MyListings) > 0 or table.getn(self.MyServices) > 0 or (TradeBoardDB and TradeBoardDB.myChain) or table.getn(self.WorldLog or {}) > 0 then
+            self.Network.queryReplyAt = self.Network.queryReplyAt or {}
+            local requester = LowerName(sender)
+            if not self.Network.queryReplyAt[requester] or now - self.Network.queryReplyAt[requester] > 120 then
+                self.Network.queryReplyAt[requester] = now
+                local delay = 5 + (math.random() * 20)
+                self:QueueOwnData(delay)
+                self:QueueSharedSnapshots(delay + 4)
             end
         end
         self:MarkPeer(sender)
@@ -1298,21 +1493,38 @@ function TB:HandleProtocolMessage(message, sender)
         if self.UpdateProfessions then
             self:UpdateProfessions()
         end
+    elseif operation == "W" then
+        self:HandleWorldMessage(fields, sender)
+        self:MarkPeer(sender)
+        if self.UpdateWorldLog then self:UpdateWorldLog() end
+        if self.UpdateBrowse then self:UpdateBrowse() end
+        if self.UpdateProfessions then self:UpdateProfessions() end
+    elseif operation == "I" then
+        self:HandleIdentityMessage(fields)
+        self:MarkPeer(sender)
+        if self.UpdateWorldLog then self:UpdateWorldLog() end
+        if self.UpdateBrowse then self:UpdateBrowse() end
+        if self.UpdateProfessions then self:UpdateProfessions() end
     end
 end
 
 function TB:ExpireRemoteData()
     local now = GetTime()
+    local wallNow = self:GetWallTime()
     local i
     local changed = nil
     for i = table.getn(self.Listings), 1, -1 do
         local listing = self.Listings[i]
-        if not listing.isMine and listing.online and listing.lastSeen and now - listing.lastSeen > self.REMOTE_TTL then
+        if listing.source == "CHAT" and listing.expiresAt and wallNow >= listing.expiresAt then
+            table.remove(self.Listings, i)
+            changed = 1
+        elseif not listing.isMine and listing.online and listing.lastSeen and now - listing.lastSeen > self.REMOTE_TTL then
             listing.online = nil
             changed = 1
         end
     end
     if changed then
+        self:RebuildListingIndex()
         self:SaveRemoteCache()
         if self.UpdateBrowse then
             self:UpdateBrowse()
@@ -1331,24 +1543,20 @@ function TB:ExpireRemoteData()
     local servicesChanged = nil
     for i = table.getn(self.Services), 1, -1 do
         local service = self.Services[i]
-        if not service.isMine and service.online and service.lastSeen and now - service.lastSeen > self.REMOTE_TTL then
+        if service.source == "CHAT" and service.expiresAt and wallNow >= service.expiresAt then
+            table.remove(self.Services, i)
+            servicesChanged = 1
+        elseif not service.isMine and service.online and service.lastSeen and now - service.lastSeen > self.REMOTE_TTL then
             service.online = nil
             servicesChanged = 1
         end
     end
     if servicesChanged then
+        self:RebuildServiceIndex()
         self:SaveRemoteCache()
         if self.UpdateProfessions then
             self:UpdateProfessions()
         end
-    end
-end
-
-function TB:CloseAddonWhoFrame()
-    if not self.closeWhoOnNextUpdate then return end
-    self.closeWhoOnNextUpdate = nil
-    if FriendsFrame and FriendsFrame:IsShown() then
-        if HideUIPanel then HideUIPanel(FriendsFrame) else FriendsFrame:Hide() end
     end
 end
 
@@ -1357,22 +1565,7 @@ function TB:NetworkOnUpdate()
         return
     end
     local now = GetTime()
-    self:CloseAddonWhoFrame()
-    if self.PendingWhoName and self.pendingWhoStarted and now - self.pendingWhoStarted > 12 then
-        self.PendingWhoName = nil
-        self.addonWhoShouldClose = nil
-    end
-    if not self.PendingWhoName and self.WhoQueue and table.getn(self.WhoQueue) > 0
-        and (not self.nextWhoLookup or now >= self.nextWhoLookup)
-        and (not FriendsFrame or not FriendsFrame:IsShown()) and SendWho then
-        local name = table.remove(self.WhoQueue, 1)
-        self.PendingWhoName = string.lower(name)
-        self.pendingWhoStarted = now
-        self.nextWhoLookup = now + self.WHO_LOOKUP_INTERVAL
-        self.addonWhoShouldClose = 1
-        if SetWhoToUI then SetWhoToUI(1) end
-        SendWho('n-"' .. name .. '"')
-    end
+    if self.PendingManualWhoName and self.pendingManualWhoStarted and now - self.pendingManualWhoStarted > 15 then self.PendingManualWhoName = nil end
     if self.Network.professionUpdateDue and now >= self.Network.professionUpdateDue then
         self:FlushPublishedProfessionChanges()
     end
@@ -1467,22 +1660,33 @@ function TB:NetworkOnEvent(eventName, one, two, three, four, five, six, seven, e
         end
         self:JoinNetworkChannel()
     elseif eventName == "CHAT_MSG_CHANNEL" then
+        if LowerName(two) == LowerName(UnitName("player")) and nine and string.upper(nine) ~= string.upper(self.CHANNEL_NAME) then
+            self.Network.userChatQuietUntil = GetTime() + 5
+        end
         self:CaptureWorldMessage(one, two, nine)
         if not nine or nine == "" or string.upper(nine) == string.upper(self.CHANNEL_NAME) then
             self:HandleProtocolMessage(one, two)
         end
+    elseif eventName == "CHAT_MSG_SAY" or eventName == "CHAT_MSG_YELL" or eventName == "CHAT_MSG_GUILD" or eventName == "CHAT_MSG_PARTY" or eventName == "CHAT_MSG_RAID" or eventName == "CHAT_MSG_WHISPER_INFORM" then
+        if LowerName(two) == LowerName(UnitName("player")) or eventName == "CHAT_MSG_WHISPER_INFORM" then self.Network.userChatQuietUntil = GetTime() + 5 end
     elseif eventName == "WHO_LIST_UPDATE" then
-        if self.PendingWhoName and GetNumWhoResults and GetWhoInfo then
+        if self.PendingManualWhoName and GetNumWhoResults and GetWhoInfo then
             local i
             for i = 1, GetNumWhoResults() do
-                local name, guild, level = GetWhoInfo(i)
-                self:RememberWorldPerson(name, guild, level)
+                local name, guild, level, race, class = GetWhoInfo(i)
+                if name and string.lower(name) == self.PendingManualWhoName then
+                    local verifiedAt = self:GetWallTime()
+                    self:RememberWorldPerson(name, guild, level, class, verifiedAt)
+                    self:QueueIdentityAnnouncement(name, level, class, guild, verifiedAt, 0)
+                    self:SetStatus("Updated " .. name .. ": level " .. tostring(level or "?") .. (class and class ~= "" and (" " .. class) or "") .. ". Shared with peers.")
+                    break
+                end
             end
         end
-        self.PendingWhoName = nil
-        if self.addonWhoShouldClose then self.closeWhoOnNextUpdate = 1 end
-        self.addonWhoShouldClose = nil
+        self.PendingManualWhoName = nil
         if self.UpdateWorldLog then self:UpdateWorldLog() end
+        if self.UpdateBrowse then self:UpdateBrowse() end
+        if self.UpdateProfessions then self:UpdateProfessions() end
     elseif eventName == "CHAT_MSG_CHANNEL_NOTICE" then
         if one == "YOU_JOINED" and nine and string.upper(nine) == string.upper(self.CHANNEL_NAME) then
             self.Network.channelID = GetChannelName(self.CHANNEL_NAME)
@@ -1527,6 +1731,12 @@ function TB:InitializeNetwork()
     frame:RegisterEvent("PLAYER_LOGOUT")
     frame:RegisterEvent("CHAT_MSG_CHANNEL")
     frame:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")
+    frame:RegisterEvent("CHAT_MSG_SAY")
+    frame:RegisterEvent("CHAT_MSG_YELL")
+    frame:RegisterEvent("CHAT_MSG_GUILD")
+    frame:RegisterEvent("CHAT_MSG_PARTY")
+    frame:RegisterEvent("CHAT_MSG_RAID")
+    frame:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
     frame:RegisterEvent("SKILL_LINES_CHANGED")
     frame:RegisterEvent("WHO_LIST_UPDATE")
     frame:SetScript("OnEvent", function()
