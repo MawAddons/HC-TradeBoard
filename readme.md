@@ -1,4 +1,4 @@
-# HC TradeBoard 0.7.1
+# HC TradeBoard 0.7.2
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -42,6 +42,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - No automatic `/who` calls. Sellers with unknown levels have a `?` button for a player-initiated visible Who lookup. All lookup buttons share a 30-second countdown; buttons disappear once the level is known. Matching level, class, and guild data is shared across tabs and peers.
 - Guild give/sell offers with item links open a dismissible, draggable loot popup. Item-only followups from that guildmate within 60 seconds join the offer. Queues and duplicate detection are bounded, and the feature sends no additional chat or peer traffic.
 - Item-linked WTS/WTB chat messages appear as **Chat** offers in Browse. WTS item offers expire three hours after the original message, including those received from peers. WTB offers and recognized **Chat** services in Professions retain their twelve-hour lifetime. The World/Trade archive also remains twelve hours; rebuilding it never restores expired WTS offers.
+- Browse displays at most one row per item name + character name, ignoring case, color codes and extra whitespace. Published listings take priority over chat offers; otherwise the newest original post supplies price, quantity and expiry, without adding quantities together. Filtering and counts use unique visible offers. Original records remain available for My Listings, withdrawals and the World/Trade archive.
 - A classic minimap coin button for opening and closing HC TradeBoard.
 - Search, category, rarity, trader-level, online, listing-type, and item-level filters.
 - Simple Armor and Weapons subcategories without the full Auction House category tree.
@@ -81,4 +82,4 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 
 ## Regression checks
 
-From the parent workspace directory, run `HC-Tradeboard/tests/data_regressions.lua`, `HC-Tradeboard/tests/world_log_smoke.lua`, `HC-Tradeboard/tests/ui_smoke.lua`, and `HC-Tradeboard/tests/guild_loot_smoke.lua` with a Lua test runtime (Fengari supported). The checks cover legacy/modern item tuples, all categories, delayed item caching, ring retention after Who enrichment, shared cooldown, dropdown interactions, and guild notifications. The UI checks use mocked game frames; final game rendering still needs a 1.12 client check.
+From the parent workspace directory, run `HC-Tradeboard/tests/data_regressions.lua`, `HC-Tradeboard/tests/browse_dedup_regressions.lua`, `HC-Tradeboard/tests/world_log_smoke.lua`, `HC-Tradeboard/tests/ui_smoke.lua`, and `HC-Tradeboard/tests/guild_loot_smoke.lua` with a Lua test runtime (Fengari supported). The checks cover legacy/modern item tuples, all categories, delayed item caching, ring retention after Who enrichment, shared cooldown, unique Browse results, dropdown interactions, and guild notifications. The UI checks use mocked game frames; final game rendering still needs a 1.12 client check.

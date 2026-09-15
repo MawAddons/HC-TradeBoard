@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.7.1"
+TradeBoard.VERSION = "0.7.2"
 TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
 TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffa335eeTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 10
@@ -560,18 +560,67 @@ function TradeBoard:IsListingVisible(listing)
     return 1
 end
 
+local function NormalizeBrowseName(value)
+    local text = string.gsub(value or "", "|c%x%x%x%x%x%x%x%x", "")
+    text = string.gsub(text, "|r", "")
+    text = string.gsub(text, "%s+", " ")
+    text = string.gsub(text, "^%s*(.-)%s*$", "%1")
+    return string.lower(text)
+end
+
+function TradeBoard:GetBrowseListingKey(listing)
+    local itemName = NormalizeBrowseName(listing.name)
+    local traderName = NormalizeBrowseName(listing.trader or listing.owner)
+    return itemName .. "\031" .. traderName
+end
+
+function TradeBoard:IsPreferredBrowseListing(candidate, current)
+    -- Published quantities/prices are explicitly entered by the seller.
+    local candidatePublished = candidate.source ~= "CHAT"
+    local currentPublished = current.source ~= "CHAT"
+    if candidatePublished ~= currentPublished then return candidatePublished end
+    local candidateAt = tonumber(candidate.lastSeenAt) or 0
+    local currentAt = tonumber(current.lastSeenAt) or 0
+    if candidateAt ~= currentAt then return candidateAt > currentAt end
+    -- Equal timestamps must produce the same result regardless of peer order.
+    return tostring(candidate.id or "") > tostring(current.id or "")
+end
+
 function TradeBoard:GetFilteredListings()
     local filtered = {}
+    local resultIndex = {}
+    local allKeys = {}
+    local uniqueTotal = 0
+    local wallNow = self:GetWallTime()
     local count = table.getn(self.Listings)
     local i
 
     for i = 1, count do
         -- Resolve cached item data before category/rarity/level filtering. A row
         -- excluded here never reaches the UI, so rendering cannot repair it.
-        if self.RefreshListingMetadata then self:RefreshListingMetadata(self.Listings[i]) end
-        if self:IsListingVisible(self.Listings[i]) then
-            table.insert(filtered, self.Listings[i])
+        local listing = self.Listings[i]
+        if self.RefreshListingMetadata then self:RefreshListingMetadata(listing) end
+        if not (listing.source == "CHAT" and listing.expiresAt and wallNow >= listing.expiresAt) then
+            local key = self:GetBrowseListingKey(listing)
+            if not allKeys[key] then allKeys[key] = 1; uniqueTotal = uniqueTotal + 1 end
+            -- Fold only the Browse result. Keep protocol IDs, personal listings
+            -- and the original archive intact for withdrawals and Wanted filters.
+            if self:IsListingVisible(listing) then
+                local index = resultIndex[key]
+                if not index then
+                    table.insert(filtered, listing)
+                    resultIndex[key] = table.getn(filtered)
+                elseif self:IsPreferredBrowseListing(listing, filtered[index]) then
+                    filtered[index] = listing
+                end
+            end
         end
+    end
+
+    filtered.totalUnique = uniqueTotal
+    if self.State.selectedListing then
+        local index = resultIndex[self:GetBrowseListingKey(self.State.selectedListing)]
+        self.State.selectedListing = index and filtered[index] or nil
     end
 
     local sortKey = self.State.sortKey

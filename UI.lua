@@ -2676,7 +2676,7 @@ function TB:UpdateBrowseRows(filtered)
     if maxOffset < 0 then maxOffset = 0 end
     self.Frames.browseScrollbar:SetRange(offset, maxOffset)
 
-    local activeTotal = table.getn(self.Listings)
+    local activeTotal = filtered.totalUnique or table.getn(self.Listings)
     local hidden = activeTotal - total
     if hidden > 0 then
         self.Frames.resultCount:SetText(total .. " matching / " .. activeTotal .. " active (filters hide " .. hidden .. ")")
