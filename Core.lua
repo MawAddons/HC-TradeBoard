@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.6.0"
+TradeBoard.VERSION = "0.6.1"
 TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
 TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffa335eeTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 10
@@ -13,7 +13,7 @@ TradeBoard.AUTO_SYNC_INTERVAL = 600
 TradeBoard.PROFESSION_UPDATE_DEBOUNCE = 45
 TradeBoard.MAX_WORLD_LOGS = 500
 TradeBoard.MAX_WORLD_ROWS = 10
-TradeBoard.WORLD_LOG_TTL = 14400
+TradeBoard.WORLD_LOG_TTL = 43200
 TradeBoard.MAX_PROFESSION_ROWS = 10
 
 TradeBoard.Listings = {}

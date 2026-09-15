@@ -1,4 +1,4 @@
-# HC TradeBoard 0.6.0
+# HC TradeBoard 0.6.1
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -37,7 +37,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 ## Features
 
 - Browse, My Listings, Trade Chains, Professions, and World Trade tabs.
-- A searchable, four-hour World and Trade-channel archive for case-insensitive WTS, WTB, and LFW posts. It is shared with peers using duplicate suppression and includes inline hoverable/clickable item links. Idea credit: Svenne :)
+- A searchable, twelve-hour World and Trade-channel archive for case-insensitive WTS, WTB, and LFW posts. It is shared with peers using duplicate suppression and includes inline hoverable/clickable item links. Idea credit: Svenne :)
 - No automatic `/who` calls. Every seller and crafter has a `?` button for a player-initiated visible Who lookup; matching level, class, and guild data is cached and shared with peers.
 - Item-linked WTS/WTB chat messages appear as expiring **Chat** offers in Browse. Recognized crafting offers such as Crusader appear as expiring, clearly labelled **Chat** services in Professions.
 - A classic minimap coin button for opening and closing HC TradeBoard.
@@ -69,6 +69,6 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - Listings are an advertisement only. HC TradeBoard does not move items, money, or automate trades.
 - Remote listings and profession services are cached locally and become offline after ten minutes without a refresh. They remain until an explicit withdrawal is received or the saved cache is cleared, so an undelivered withdrawal can leave an old offline advertisement visible.
 - Version 0.6.0 uses the `TB2` protocol because listing prices changed from per-item to total price. Peers must update to 0.6.0 or newer to exchange data.
-- Chat-offer parsing is deliberately conservative: Browse requires a real item link, profession imports require a recognized service keyword, and quantity/price extraction is best effort. Chat-derived entries are visibly labelled and expire after four hours.
+- Chat-offer parsing is deliberately conservative: Browse requires a real item link, profession imports require a recognized service keyword, and quantity/price extraction is best effort. Chat-derived entries are visibly labelled and expire after twelve hours.
 - SavedVariables are shared by characters on one WoW account. Separate accounts share the World/Trade archive and Who-derived data only while their clients can meet through the peer channel.
 - The first live build publishes sale listings. Wanted-order creation is planned but not yet in the posting form.

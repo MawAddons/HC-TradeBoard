@@ -2395,7 +2395,7 @@ function TB:UpdateWorldLog()
             row:Hide()
         end
     end
-    self.Frames.worldLogCount:SetText(total .. (total == 1 and " shared message" or " shared messages") .. " / expires after 4 hours")
+    self.Frames.worldLogCount:SetText(total .. (total == 1 and " shared message" or " shared messages") .. " / expires after 12 hours")
     if self.Frames.worldScrollbar then self.Frames.worldScrollbar:SetRange(self.State.worldOffset, maxOffset) end
 end
 

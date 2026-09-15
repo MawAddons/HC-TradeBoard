@@ -17,6 +17,8 @@ dofile("HC-Tradeboard/Core.lua")
 dofile("HC-Tradeboard/Network.lua")
 
 local TB = TradeBoard
+
+assert(TB.WORLD_LOG_TTL == 43200, "chat archive TTL is not 12 hours")
 TradeBoardDB = nil
 TB:InitializeWorldLog()
 
