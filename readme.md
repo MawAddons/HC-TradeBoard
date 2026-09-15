@@ -1,4 +1,4 @@
-# HC TradeBoard 0.5.2
+# HC TradeBoard 0.6.0
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -26,9 +26,9 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 ## Using it
 
 - Open HC TradeBoard with `/tb`, `/tradeboard`, or the minimap coin.
-- Opening HC TradeBoard automatically requests current peer data and repeats that request every minute while the window remains open. `/tb probe` and `/tb sync` remain available as diagnostic commands.
+- Opening HC TradeBoard requests current peer data and refreshes at most every ten minutes while the window remains open. `/tb probe` and `/tb sync` remain available as diagnostic commands, with a short anti-spam cooldown.
 - With HC TradeBoard open, Shift-left-click a bag item to load it into **My Listings**. You can also drag it onto the sale slot or arm one normal bag click. HC TradeBoard never opens the bags automatically.
-- A character can publish any number of active sale listings. Mouse-wheel the five-row **My Active Sales** view, then select one and click **Remove Selected** to withdraw it.
+- A character can publish any number of active sale listings using quantity and a total stack price. Scroll **My Active Listings**, then select one and click **Remove Selected** to withdraw it.
 - In **Trade Chains**, use **List / Edit My Chain** to publish your chain or **Delete My Chain** to withdraw it.
 - In **Professions**, use **List / Edit Mine** to publish services learned by the current character, including skill rank and an optional short note.
 - The Professions tab includes the three guilds with the most distinct providers. Click a guild sigil to filter the service table; click it again to clear the filter.
@@ -37,18 +37,20 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 ## Features
 
 - Browse, My Listings, Trade Chains, Professions, and World Trade tabs.
-- A local, searchable World-channel archive for case-insensitive WTS, WTB, and LFW posts, including character, level, guild, original message, and inline hoverable/clickable item links. Click a character to open a whisper or its guild to run a visible `/who` guild search. Character details come from TradeBoard data or throttled `/who` lookups. Automatic lookups wait while Social is open and close only the Who window they trigger. Idea credit: Svenne :)
+- A searchable, four-hour World and Trade-channel archive for case-insensitive WTS, WTB, and LFW posts. It is shared with peers using duplicate suppression and includes inline hoverable/clickable item links. Idea credit: Svenne :)
+- No automatic `/who` calls. Every seller and crafter has a `?` button for a player-initiated visible Who lookup; matching level, class, and guild data is cached and shared with peers.
+- Item-linked WTS/WTB chat messages appear as expiring **Chat** offers in Browse. Recognized crafting offers such as Crusader appear as expiring, clearly labelled **Chat** services in Professions.
 - A classic minimap coin button for opening and closing HC TradeBoard.
 - Search, category, rarity, trader-level, online, listing-type, and item-level filters.
 - Simple Armor and Weapons subcategories without the full Auction House category tree.
 - Toggle between Required Level and Item Level by clicking the level-type button.
-- Click any table header to sort ascending or descending, including numeric unit-price sorting.
-- Prominent mouse-wheel scrolling guidance over result, active-sales, trade-chain, and World-message lists.
+- Click any table header to sort ascending or descending, including numeric total-price sorting.
+- Compact AH-style layouts and classic WoW scrollbars across Browse, My Listings, Trade Chains, Professions, and World Trade.
 - Hover a Browse result to see the normal WoW item-stat tooltip stacked above the HC TradeBoard listing summary.
 - Item-stat tooltips pass raw `item:...` hyperlinks for compatibility with AtlasLoot tooltip hooks.
-- Real bag-backed sale listings with quantity and gold/silver/copper unit pricing.
+- Real bag-backed sale listings with quantity and gold/silver/copper total pricing; per-item price is calculated only in the tooltip.
 - Saved personal listings and a saved 12-slot level 5-60 trade chain.
-- Peer discovery, sync requests, paced announcements, removals, periodic refreshes, and persistent offline caching.
+- Lightweight peer discovery, deduplicated queues, two-second global send pacing, eight-second World-log pacing, 15-minute announcements, and persistent offline caching. Background sends pause briefly whenever the player chats, reducing the risk of server spam throttling.
 - Listing broadcasts include the seller's current character level and item icon texture, with local item-cache refresh as a fallback.
 - Offline listings remain available when **Online only** is unchecked, with dimmed rows and last-seen information.
 - Peer-synced profession services with profession and guild filters, current skill rank, guild name, optional service notes, online/last-seen status, and direct whispering.
@@ -66,5 +68,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - Every player who wants to see or publish listings needs HC TradeBoard installed and must be able to join the same custom channel. Whether Horde and Alliance share that custom channel depends on the server implementation.
 - Listings are an advertisement only. HC TradeBoard does not move items, money, or automate trades.
 - Remote listings and profession services are cached locally and become offline after ten minutes without a refresh. They remain until an explicit withdrawal is received or the saved cache is cleared, so an undelivered withdrawal can leave an old offline advertisement visible.
-- Guild names and rankings appear only for records broadcast by TradeBoard protocol clients 0.4.0 or newer; older peer versions remain compatible but have no guild field.
+- Version 0.6.0 uses the `TB2` protocol because listing prices changed from per-item to total price. Peers must update to 0.6.0 or newer to exchange data.
+- Chat-offer parsing is deliberately conservative: Browse requires a real item link, profession imports require a recognized service keyword, and quantity/price extraction is best effort. Chat-derived entries are visibly labelled and expire after four hours.
+- SavedVariables are shared by characters on one WoW account. Separate accounts share the World/Trade archive and Who-derived data only while their clients can meet through the peer channel.
 - The first live build publishes sale listings. Wanted-order creation is planned but not yet in the posting form.
