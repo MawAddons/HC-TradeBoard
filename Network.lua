@@ -59,6 +59,7 @@ function TB:RebuildListingIndex()
 end
 
 function TB:UpsertListing(listing)
+    self:RefreshListingMetadata(listing)
     local key = self:GetListingKey(listing.owner, listing.id)
     local index = self.ListingIndex[key]
     if index then
@@ -97,6 +98,80 @@ end
 function TB:ExtractItemKey(link)
     local _, _, itemKey = string.find(link or "", "|Hitem:([^|]+)|h")
     return itemKey
+end
+
+function TB:GetItemMetadata(link)
+    if not link or not GetItemInfo then return nil end
+    local _, _, itemString = string.find(link, "|H([^|]+)|h")
+    itemString = itemString or link
+    if not self.ItemMetadataCache or (self.ItemMetadataCacheCount or 0) >= 1000 then
+        self.ItemMetadataCache = {}; self.ItemMetadataCacheCount = 0
+    end
+    local saved = self.ItemMetadataCache[itemString]
+    if saved and saved.retryAt then
+        if GetTime() < saved.retryAt then return nil end
+        self.ItemMetadataCache[itemString] = nil
+        self.ItemMetadataCacheCount = math.max(0, (self.ItemMetadataCacheCount or 0) - 1)
+        saved = nil
+    end
+    if saved then
+        if string.find(link, "|Hitem:", 1, 1) then saved.itemLink = link end
+        return saved
+    end
+    local name, itemLink, quality, fourth, fifth, sixth, seventh, eighth, ninth, tenth = GetItemInfo(itemString)
+    if not name then
+        local itemID = self:ExtractItemID(link)
+        if itemID then
+            name, itemLink, quality, fourth, fifth, sixth, seventh, eighth, ninth, tenth = GetItemInfo(itemID)
+        end
+    end
+    if not name then
+        -- Filters and duplicated chat links can request the same cache miss
+        -- repeatedly. Retry on a later refresh, at most once per two seconds.
+        self.ItemMetadataCache[itemString] = { retryAt = GetTime() + 2 }
+        self.ItemMetadataCacheCount = (self.ItemMetadataCacheCount or 0) + 1
+        return nil
+    end
+    local data = { name = name, quality = self:NormalizeQuality(quality), itemLink = itemLink }
+    -- 1.12 has nine returns: field 4 is required level, field 5 is item type.
+    -- Newer clients insert item level at field 4. Detect the tuple, not build IDs,
+    -- since client extensions can provide either shape.
+    if type(fifth) == "string" then
+        data.requiredLevel = tonumber(fourth) or 0
+        data.itemType = fifth; data.subType = sixth; data.maxStack = seventh
+        data.equipLocation = eighth; data.texture = ninth
+    else
+        data.itemLevel = tonumber(fourth)
+        data.requiredLevel = tonumber(fifth) or 0
+        data.itemType = sixth; data.subType = seventh; data.maxStack = eighth
+        data.equipLocation = ninth; data.texture = tenth
+    end
+    data.category = self:GetItemCategory(data.itemType)
+    data.tags = self:GetItemTags(data.category, data.subType)
+    -- Full incoming links preserve random suffixes and stay clickable on 1.12,
+    -- whose second return is commonly an unformatted item string.
+    if string.find(link, "|Hitem:", 1, 1) then data.itemLink = link end
+    if not data.itemType or not data.subType then return nil end
+    self.ItemMetadataCache[itemString] = data
+    self.ItemMetadataCacheCount = (self.ItemMetadataCacheCount or 0) + 1
+    return data
+end
+
+function TB:RefreshListingMetadata(listing)
+    if not listing then return nil end
+    local data = self:GetItemMetadata(listing.itemLink)
+    if not data then return nil end
+    listing.name = data.name
+    if not string.find(listing.itemLink or "", "|Hitem:", 1, 1) then listing.itemLink = data.itemLink or listing.itemLink end
+    listing.texture = data.texture or listing.texture
+    listing.quality = data.quality
+    listing.requiredLevel = data.requiredLevel
+    -- Old saved 1.12 rows put minimum level in itemLevel; do not retain that
+    -- misleading value when this client cannot provide actual item level.
+    listing.itemLevel = data.itemLevel or 0
+    listing.itemType = data.itemType; listing.subType = data.subType
+    listing.category = data.category; listing.tags = CopyTags(data.tags)
+    return 1
 end
 
 function TB:CountItemInBags(itemLink)
@@ -220,18 +295,17 @@ function TB:ImportWorldEntry(entry)
     local i
     for i = 1, table.getn(entry.items or {}) do
         local link = entry.items[i]
-        local name, canonicalLink, quality, itemLevel, requiredLevel, itemType, subType, maxStack, equipLocation, texture = GetItemInfo(link)
-        local category = self:GetItemCategory(itemType)
+        local data = self:GetItemMetadata(link) or {}
         self:UpsertListing({
             id = "chat:" .. entry.id .. ":" .. i, owner = entry.sender, trader = entry.sender,
             guild = entry.guild or (person and person.guild) or "", class = entry.class or (person and person.class) or "",
-            itemID = self:ExtractItemID(link), itemLink = canonicalLink or link, name = name or self:ExtractItemName(link),
-            texture = texture or QUESTION_TEXTURE, quality = self:NormalizeQuality(quality or 1),
-            requiredLevel = tonumber(requiredLevel) or 0, itemLevel = tonumber(itemLevel) or 0,
+            itemID = self:ExtractItemID(link), itemLink = data.itemLink or link, name = data.name or self:ExtractItemName(link),
+            texture = data.texture or QUESTION_TEXTURE, quality = data.quality or 1,
+            requiredLevel = data.requiredLevel or 0, itemLevel = data.itemLevel or 0,
             quantity = quantity, totalPrice = totalPrice, priceKnown = totalPrice > 0 and 1 or nil,
             traderLevel = tonumber(entry.level) or (person and person.level) or 0,
-            orderType = entry.type == "WTB" and "BUY" or "SELL", category = category,
-            tags = self:GetItemTags(category, subType), online = 1, lastSeen = GetTime(),
+            orderType = entry.type == "WTB" and "BUY" or "SELL", category = data.category or "Miscellaneous",
+            tags = CopyTags(data.tags), online = 1, lastSeen = GetTime(),
             lastSeenAt = entry.timestamp, expiresAt = entry.timestamp + self.WORLD_LOG_TTL,
             source = "CHAT", channel = entry.channel,
         })
@@ -325,8 +399,7 @@ function TB:BuildBagListingCandidate(bag, slot, quiet)
         return nil
     end
 
-    local name, canonicalLink, quality, itemLevel, requiredLevel, itemType, subType, maxStack, equipLocation, itemTexture = GetItemInfo(link)
-    local category = self:GetItemCategory(itemType)
+    local data = self:GetItemMetadata(link) or {}
     local itemID = self:ExtractItemID(link)
     local itemKey = self:ExtractItemKey(link)
     local availableQuantity = self:CountItemInBags(link)
@@ -344,18 +417,18 @@ function TB:BuildBagListingCandidate(bag, slot, quiet)
         slot = slot,
         itemID = itemID,
         itemKey = itemKey,
-        itemLink = canonicalLink or link,
-        name = name or self:ExtractItemName(link),
-        texture = itemTexture or texture or QUESTION_TEXTURE,
-        quality = self:NormalizeQuality(quality or bagQuality or 1),
-        itemLevel = itemLevel or 0,
-        requiredLevel = requiredLevel or 0,
-        itemType = itemType or "",
-        subType = subType or "",
-        category = category,
-        tags = self:GetItemTags(category, subType),
+        itemLink = data.itemLink or link,
+        name = data.name or self:ExtractItemName(link),
+        texture = data.texture or texture or QUESTION_TEXTURE,
+        quality = data.quality or self:NormalizeQuality(bagQuality or 1),
+        itemLevel = data.itemLevel or 0,
+        requiredLevel = data.requiredLevel or 0,
+        itemType = data.itemType or "",
+        subType = data.subType or "",
+        category = data.category or "Miscellaneous",
+        tags = CopyTags(data.tags),
         availableQuantity = availableQuantity,
-        maxStack = maxStack or count or 1,
+        maxStack = data.maxStack or count or 1,
     }
 end
 
@@ -956,7 +1029,7 @@ function TB:LoadRemoteCache()
             if listing.totalPrice == nil then listing.totalPrice = (tonumber(listing.unitPrice) or 0) * (tonumber(listing.quantity) or 1) end
             listing.totalPrice = tonumber(listing.totalPrice) or 0
             listing.unitPrice = nil
-            listing.traderLevel = tonumber(listing.traderLevel) or 1
+            listing.traderLevel = tonumber(listing.traderLevel) or 0
             listing.tags = CopyTags(listing.tags)
             listing.online = nil
             listing.isMine = nil
@@ -1382,7 +1455,7 @@ end
 
 function TB:HandleListingMessage(fields, sender)
     local itemLink = self:UnescapeProtocol(fields[4])
-    local name, canonicalLink, cachedQuality, cachedItemLevel, cachedRequired, itemType, subType, maxStack, equipLocation, texture = GetItemInfo(itemLink)
+    local data = self:GetItemMetadata(itemLink) or {}
     local transmittedTexture = self:UnescapeProtocol(fields[14] or "")
     local existing = self.ListingIndex[self:GetListingKey(sender, self:UnescapeProtocol(fields[3]))]
     existing = existing and self.Listings[existing] or nil
@@ -1393,15 +1466,15 @@ function TB:HandleListingMessage(fields, sender)
         trader = sender,
         guild = guild ~= "" and guild or (existing and existing.guild) or "",
         itemID = self:ExtractItemID(itemLink),
-        itemLink = canonicalLink or itemLink,
-        name = name or self:ExtractItemName(itemLink),
-        texture = transmittedTexture ~= "" and transmittedTexture or texture or QUESTION_TEXTURE,
-        quality = self:NormalizeQuality(tonumber(fields[5]) or cachedQuality or 1),
-        requiredLevel = tonumber(fields[6]) or cachedRequired or 0,
-        itemLevel = tonumber(fields[7]) or cachedItemLevel or 0,
+        itemLink = data.itemLink or itemLink,
+        name = data.name or self:ExtractItemName(itemLink),
+        texture = transmittedTexture ~= "" and transmittedTexture or data.texture or QUESTION_TEXTURE,
+        quality = self:NormalizeQuality(tonumber(fields[5]) or data.quality or 1),
+        requiredLevel = data.requiredLevel or tonumber(fields[6]) or 0,
+        itemLevel = data.itemLevel or tonumber(fields[7]) or 0,
         quantity = tonumber(fields[8]) or 1,
         totalPrice = tonumber(fields[9]) or 0,
-        traderLevel = tonumber(fields[10]) or 1,
+        traderLevel = tonumber(fields[10]) or 0,
         orderType = fields[11] == "BUY" and "BUY" or "SELL",
         category = self:UnescapeProtocol(fields[12] or "Miscellaneous"),
         tags = self:DecodeTags(self:UnescapeProtocol(fields[13] or "")),

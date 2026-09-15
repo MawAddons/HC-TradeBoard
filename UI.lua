@@ -44,6 +44,10 @@ local function CreatePanel(parent, width, height)
     panel:SetBackdrop(PANEL_BACKDROP)
     panel:SetBackdropColor(0.025, 0.025, 0.025, 0.96)
     panel:SetBackdropBorderColor(0.42, 0.34, 0.18, 1)
+    local fill = panel:CreateTexture(nil, "BACKGROUND")
+    fill:SetTexture(0.018, 0.016, 0.012, 1)
+    fill:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -4)
+    fill:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -4, 4)
     return panel
 end
 
@@ -85,10 +89,12 @@ end
 
 local function SetButtonSelected(button, selected)
     if selected then
+        button.fill:SetTexture(0.20, 0.08, 0.015, 1)
         button:SetBackdropColor(0.26, 0.10, 0.02, 1)
         button:SetBackdropBorderColor(0.95, 0.66, 0.18, 1)
         button.label:SetTextColor(1.00, 0.84, 0.26)
     else
+        button.fill:SetTexture(0.035, 0.030, 0.022, 1)
         button:SetBackdropColor(0.055, 0.055, 0.055, 1)
         button:SetBackdropBorderColor(0.34, 0.28, 0.16, 1)
         button.label:SetTextColor(0.83, 0.74, 0.58)
@@ -178,6 +184,98 @@ local function CreateHeading(parent, text)
     return heading
 end
 
+-- Small, self-contained dropdowns keep the AH filters on one line on 1.12.
+local function CreateDropdown(parent, width, choices, onSelect)
+    local button = CreateButton(parent, "", width, 28)
+    button:SetBackdropColor(0.025, 0.025, 0.025, 1)
+    button.fill:SetTexture(0.025, 0.025, 0.025, 1)
+    button.label:ClearAllPoints()
+    button.label:SetPoint("LEFT", button, "LEFT", 8, 0)
+    button.label:SetWidth(width - 30)
+    button.label:SetJustifyH("LEFT")
+    button.label:SetFontObject(GameFontHighlightSmall)
+    local arrow = button:CreateTexture(nil, "ARTWORK")
+    arrow:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
+    arrow:SetWidth(22); arrow:SetHeight(22)
+    arrow:SetPoint("RIGHT", button, "RIGHT", -3, 0)
+    local menu = CreatePanel(button, math.max(width, 138), table.getn(choices) * 25 + 8)
+    menu:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -2)
+    menu:SetFrameStrata("DIALOG")
+    menu:SetFrameLevel(button:GetFrameLevel() + 10)
+    menu:EnableMouse(1)
+    menu:Hide()
+    button.menu = menu
+    button.options = {}
+    function button:SetValue(value)
+        self.value = value
+        local i
+        for i = 1, table.getn(choices) do
+            if choices[i].value == value then self.label:SetText(choices[i].label) end
+            SetButtonSelected(self.options[i], choices[i].value == value)
+        end
+    end
+    local i
+    for i = 1, table.getn(choices) do
+        local option = CreateButton(menu, choices[i].label, menu:GetWidth() - 8, 24)
+        option:SetPoint("TOPLEFT", menu, "TOPLEFT", 4, -4 - (i - 1) * 25)
+        option.value = choices[i].value
+        option:SetScript("OnClick", function()
+            button:SetValue(this.value)
+            menu:Hide()
+            TB.openFilterMenu = nil
+            onSelect(this.value)
+        end)
+        button.options[i] = option
+    end
+    button:SetScript("OnClick", function()
+        if menu:IsShown() then
+            menu:Hide(); TB.openFilterMenu = nil
+        else
+            if TB.openFilterMenu then TB.openFilterMenu:Hide() end
+            menu:Show(); TB.openFilterMenu = menu
+        end
+    end)
+    button:SetScript("OnHide", function() menu:Hide() end)
+    return button
+end
+
+function TB:UpdateWhoButton(button, name, level)
+    button.trader = name
+    button.sender = name
+    local knownLevel = tonumber(level) or 0
+    if name then
+        local cachedLevel = self:GetKnownTraderInfo(name)
+        if (tonumber(cachedLevel) or 0) > knownLevel then knownLevel = cachedLevel end
+    end
+    if not name or name == "" or knownLevel > 0 then button:Hide(); return end
+    local remaining = self:GetWhoCooldownRemaining()
+    button.label:SetText(remaining > 0 and tostring(remaining) or "?")
+    if remaining > 0 then
+        button:Disable(); button.label:SetTextColor(0.62, 0.58, 0.47)
+    else
+        button:Enable(); button.label:SetTextColor(1.00, 0.82, 0.24)
+    end
+    button:Show()
+end
+
+function TB:RefreshWhoButtons()
+    local i, row
+    for i = 1, table.getn(self.Frames.resultRows or {}) do
+        row = self.Frames.resultRows[i]
+        self:UpdateWhoButton(row.whoButton, row.listing and row.listing.trader, row.listing and row.listing.traderLevel)
+    end
+    for i = 1, table.getn(self.Frames.worldLogRows or {}) do
+        row = self.Frames.worldLogRows[i]
+        self:UpdateWhoButton(row.whoButton, row.entry and row.entry.sender, row.entry and row.entry.level)
+    end
+    for i = 1, table.getn(self.Frames.professionRows or {}) do
+        row = self.Frames.professionRows[i]
+        self:UpdateWhoButton(row.whoButton, row.service and row.service.trader, row.service and row.service.level)
+    end
+    local chainButton = self.Frames.chainWhoButton
+    if chainButton then self:UpdateWhoButton(chainButton, chainButton.trader) end
+end
+
 local function CreateClassicScrollbar(parent, height, onOffsetChanged)
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetWidth(20)
@@ -248,6 +346,7 @@ local function CreateClassicScrollbar(parent, height, onOffsetChanged)
 end
 
 function TB:OnMainFrameHidden()
+    if self.openFilterMenu then self.openFilterMenu:Hide(); self.openFilterMenu = nil end
     self.bagPickMode = nil
     if self.Frames.chainEditor then
         self.Frames.chainEditor:Hide()
@@ -285,6 +384,10 @@ function TB:CreateMainFrame()
     frame:SetBackdrop(MAIN_BACKDROP)
     frame:SetBackdropColor(0.018, 0.018, 0.018, 0.98)
     frame:SetBackdropBorderColor(0.54, 0.42, 0.18, 1)
+    local background = frame:CreateTexture(nil, "BACKGROUND")
+    background:SetTexture(0.020, 0.018, 0.014, 1)
+    background:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
+    background:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
     frame:SetScript("OnHide", function()
         TB:OnMainFrameHidden()
     end)
@@ -488,7 +591,7 @@ function TB:CreateBrowsePane(parent)
     searchPanel:SetPoint("TOPLEFT", pane, "TOPLEFT", 0, 0)
 
     self.Frames.browseFilterBar = searchPanel
-    local searchField = CreateEditBox(searchPanel, 205, 28, "")
+    local searchField = CreateEditBox(searchPanel, 230, 28, "")
     searchField:SetPoint("LEFT", searchPanel, "LEFT", 8, 0)
     searchField:SetMaxLetters(60)
     self.Frames.searchField = searchField
@@ -553,19 +656,20 @@ function TB:CreateCategoryPanel(parent)
     local panel = CreatePanel(parent, 142, 488)
     panel:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -50)
     self.Frames.categoryHeading = CreateHeading(panel, "Categories")
+    self.Frames.categoryHeading:Hide()
     self.Frames.categoryPanel = panel
     self.Frames.categoryButtons = {}
 
     local i
     for i = 1, 11 do
-        local button = CreateButton(panel, "", 126, 28)
-        button:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -32 - ((i - 1) * 32))
+        local button = CreateButton(panel, "", 126, 36)
+        button:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -8 - ((i - 1) * 40))
         button.label:ClearAllPoints()
         button.label:SetPoint("LEFT", button, "LEFT", 28, 0)
         button.label:SetWidth(92)
         button.label:SetJustifyH("LEFT")
         local icon = button:CreateTexture(nil, "ARTWORK")
-        icon:SetWidth(18); icon:SetHeight(18); icon:SetPoint("LEFT", button, "LEFT", 6, 0)
+        icon:SetWidth(22); icon:SetHeight(22); icon:SetPoint("LEFT", button, "LEFT", 4, 0)
         button.categoryIcon = icon
         button:SetScript("OnClick", function()
             local entry = this.categoryEntry
@@ -650,47 +754,34 @@ end
 
 function TB:CreateFilterPanels(parent)
     local bar = self.Frames.browseFilterBar
-    local rangeCheck = CreateCheckButton(bar, self:GetTraderRangeLabel(), 132, self.State.myLevelRange, function(value)
-        TB.State.myLevelRange = value
+    local levelLabel = CreateText(bar, "Level:", "GameFontHighlightSmall", GOLD_R, GOLD_G, GOLD_B)
+    levelLabel:SetPoint("LEFT", bar, "LEFT", 248, 0)
+    local levelType = CreateDropdown(bar, 102, {
+        { label = "All", value = "all" },
+        { label = "Required", value = "required" },
+        { label = "Item level", value = "item" },
+        { label = "My range", value = "range" },
+    }, function(value)
+        TB.State.myLevelRange = value == "range" and 1 or nil
+        TB.State.levelType = value == "range" and "all" or value
         TB.State.browseOffset = 0
         TB:UpdateBrowse()
     end)
-    rangeCheck:SetPoint("LEFT", bar, "LEFT", 220, 0)
-    self.Frames.rangeCheck = rangeCheck
+    levelType:SetPoint("LEFT", bar, "LEFT", 285, 0)
+    self.Frames.levelDropdown = levelType
 
-    local onlineCheck = CreateCheckButton(bar, "Online", 82, self.State.onlineOnly, function(value)
-        TB.State.onlineOnly = value
-        TB.State.browseOffset = 0
-        TB:UpdateBrowse()
-    end)
-    onlineCheck:SetPoint("LEFT", bar, "LEFT", 352, 0)
-    self.Frames.onlineCheck = onlineCheck
-
-    local levelType = CreateButton(bar, "Required", 100, 27)
-    levelType:SetPoint("LEFT", bar, "LEFT", 435, 0)
-    levelType:SetScript("OnClick", function()
-        if TB.State.levelType == "required" then
-            TB.State.levelType = "item"
-        else
-            TB.State.levelType = "required"
-        end
-        TB.State.browseOffset = 0
-        TB:UpdateBrowse()
-    end)
-    self.Frames.levelTypeButton = levelType
-
-    local minLabel = CreateText(bar, "Min", "GameFontHighlightSmall", 0.80, 0.74, 0.62)
-    minLabel:SetPoint("LEFT", bar, "LEFT", 541, 0)
-    local minEdit = CreateEditBox(bar, 38, 27, tostring(self.State.minLevel))
-    minEdit:SetPoint("LEFT", bar, "LEFT", 564, 0)
+    local minLabel = CreateText(bar, "Min:", "GameFontHighlightSmall", GOLD_R, GOLD_G, GOLD_B)
+    minLabel:SetPoint("LEFT", bar, "LEFT", 396, 0)
+    local minEdit = CreateEditBox(bar, 42, 28, "")
+    minEdit:SetPoint("LEFT", bar, "LEFT", 430, 0)
     minEdit:SetMaxLetters(3)
     minEdit:SetJustifyH("CENTER")
     self.Frames.minLevel = minEdit
 
-    local maxLabel = CreateText(bar, "Max", "GameFontHighlightSmall", 0.80, 0.74, 0.62)
-    maxLabel:SetPoint("LEFT", bar, "LEFT", 608, 0)
-    local maxEdit = CreateEditBox(bar, 38, 27, tostring(self.State.maxLevel))
-    maxEdit:SetPoint("LEFT", bar, "LEFT", 634, 0)
+    local maxLabel = CreateText(bar, "Max:", "GameFontHighlightSmall", GOLD_R, GOLD_G, GOLD_B)
+    maxLabel:SetPoint("LEFT", bar, "LEFT", 480, 0)
+    local maxEdit = CreateEditBox(bar, 42, 28, "")
+    maxEdit:SetPoint("LEFT", bar, "LEFT", 514, 0)
     maxEdit:SetMaxLetters(3)
     maxEdit:SetJustifyH("CENTER")
     self.Frames.maxLevel = maxEdit
@@ -704,49 +795,54 @@ function TB:CreateFilterPanels(parent)
         TB:UpdateBrowse()
     end)
 
-    self.Frames.rarityChecks = {}
-    local rarityLabel = CreateText(bar, "Rarity", "GameFontHighlightSmall", 0.80, 0.74, 0.62)
-    rarityLabel:SetPoint("LEFT", bar, "LEFT", 678, 0)
+    local rarityLabel = CreateText(bar, "Rarity:", "GameFontHighlightSmall", GOLD_R, GOLD_G, GOLD_B)
+    rarityLabel:SetPoint("LEFT", bar, "LEFT", 566, 0)
+    local rarityChoices = { { label = "All", value = "ALL" } }
     local quality
     for quality = 1, 5 do
-        local qualityIndex = quality
-        local info = self.Quality[quality]
-        local check = CreateCheckButton(bar, string.sub(info.name, 1, 1), 30, self.State.rarities[quality], function(value)
-            TB.State.rarities[qualityIndex] = value
-            TB.State.browseOffset = 0
-            TB:UpdateBrowse()
-        end, info.r, info.g, info.b)
-        check:SetPoint("LEFT", bar, "LEFT", 720 + ((quality - 1) * 31), 0)
-        self.Frames.rarityChecks[quality] = check
+        table.insert(rarityChoices, { label = quality == 2 and "Uncommon" or self.Quality[quality].name, value = quality })
     end
+    local rarity = CreateDropdown(bar, 100, rarityChoices, function(value)
+        local q
+        for q = 1, 5 do TB.State.rarities[q] = (value == "ALL" or q == value) and 1 or nil end
+        TB.State.browseOffset = 0
+        TB:UpdateBrowse()
+    end)
+    rarity:SetPoint("LEFT", bar, "LEFT", 610, 0)
+    self.Frames.rarityDropdown = rarity
 
-    self.Frames.listingTypeButtons = {}
-    local listingChoices = {
-        { label = "All", value = "ALL" },
-        { label = "Sale", value = "SELL" },
+    local listingLabel = CreateText(bar, "Listing Type:", "GameFontHighlightSmall", GOLD_R, GOLD_G, GOLD_B)
+    listingLabel:SetPoint("LEFT", bar, "LEFT", 714, 0)
+    local listingType = CreateDropdown(bar, 118, {
+        { label = "All Listings", value = "ALL" },
+        { label = "For Sale", value = "SELL" },
         { label = "Wanted", value = "BUY" },
-    }
-    local i
-    for i = 1, table.getn(listingChoices) do
-        local listingType = listingChoices[i].value
-        local typeButton = CreateButton(bar, listingChoices[i].label, 52, 27)
-        typeButton:SetPoint("LEFT", bar, "LEFT", 882 + ((i - 1) * 55), 0)
-        typeButton:SetScript("OnClick", function()
-            TB.State.listingType = listingType
-            TB.State.browseOffset = 0
-            TB:UpdateBrowse()
-        end)
-        self.Frames.listingTypeButtons[listingType] = typeButton
-    end
+    }, function(value)
+        TB.State.listingType = value
+        TB.State.browseOffset = 0
+        TB:UpdateBrowse()
+    end)
+    listingType:SetPoint("LEFT", bar, "LEFT", 796, 0)
+    self.Frames.listingTypeDropdown = listingType
 
-    local clear = CreateButton(bar, "Clear", 72, 27)
+    local onlineCheck = CreateCheckButton(bar, "Online", 90, self.State.onlineOnly, function(value)
+        TB.State.onlineOnly = value
+        TB.State.browseOffset = 0
+        TB:UpdateBrowse()
+    end)
+    onlineCheck:SetPoint("LEFT", bar, "LEFT", 924, 0)
+    self.Frames.onlineCheck = onlineCheck
+
+    local clear = CreateButton(bar, "Clear", 108, 28)
     clear:SetPoint("RIGHT", bar, "RIGHT", -8, 0)
     clear:SetScript("OnClick", function()
+        if TB.openFilterMenu then TB.openFilterMenu:Hide(); TB.openFilterMenu = nil end
         TB:ResetFilters()
         TB:SyncFilterControls()
         TB:UpdateBrowse()
         TB:SetStatus("All local filters cleared.")
     end)
+    self.Frames.clearFilters = clear
 end
 
 function TB:TryInsertItemLink(item)
@@ -869,6 +965,15 @@ function TB:CreateResultsPanel(parent)
         { text = "Source", x = 874, width = 66, sortKey = "source" },
     }
 
+    local dividerIndex
+    for dividerIndex = 2, table.getn(columns) do
+        local divider = panel:CreateTexture(nil, "OVERLAY")
+        divider:SetTexture(0.46, 0.36, 0.17, 0.18)
+        divider:SetWidth(1)
+        divider:SetPoint("TOPLEFT", panel, "TOPLEFT", columns[dividerIndex].x + 2, -6)
+        divider:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", columns[dividerIndex].x + 2, 9)
+    end
+
     self.Frames.sortHeaders = {}
     local i
     for i = 1, table.getn(columns) do
@@ -921,9 +1026,9 @@ function TB:CreateResultsPanel(parent)
     self.Frames.resultRows = {}
     for i = 1, self.MAX_VISIBLE_ROWS do
         local row = CreateFrame("Button", nil, panel)
-        row:SetPoint("TOPLEFT", panel, "TOPLEFT", 6, -35 - ((i - 1) * 40))
+        row:SetPoint("TOPLEFT", panel, "TOPLEFT", 6, -35 - ((i - 1) * 44))
         row:SetWidth(964)
-        row:SetHeight(38)
+        row:SetHeight(42)
 
         local bg = row:CreateTexture(nil, "BACKGROUND")
         if math.mod(i, 2) == 0 then
@@ -2091,7 +2196,7 @@ function TB:UpdateProfessionRows(filtered)
             row.service = service
             row.profession:SetText(service.profession)
             row.crafter:SetText(service.trader)
-            row.whoButton.trader = service.trader
+            self:UpdateWhoButton(row.whoButton, service.trader, service.level)
             row.level:SetText((tonumber(service.level) or 0) > 0 and tostring(service.level) or "?")
             row.class:SetText(service.class and service.class ~= "" and service.class or "-")
             row.guild:SetText(service.guild and service.guild ~= "" and service.guild or "-")
@@ -2326,6 +2431,7 @@ function TB:UpdateWorldLog()
         local entry = filtered[total - self.State.worldOffset - i + 1]
         local row = self.Frames.worldLogRows[i]
         if entry then
+            row.entry = entry
             local stamp = date and date("%m-%d %H:%M", entry.timestamp) or tostring(entry.timestamp)
             local level = (tonumber(entry.level) or 0) > 0 and (" L" .. entry.level) or " L?"
             local typeColor = entry.type == "WTS" and "66ff66" or (entry.type == "WTB" and "ffcc55" or "66ccff")
@@ -2338,9 +2444,9 @@ function TB:UpdateWorldLog()
             row.senderButton:SetWidth(row.senderButton.text:GetStringWidth() + 2)
             row.whoButton:ClearAllPoints()
             row.whoButton:SetPoint("LEFT", row.senderButton, "RIGHT", 3, 0)
-            row.whoButton.sender = entry.sender
+            self:UpdateWhoButton(row.whoButton, entry.sender, entry.level)
             row.level:ClearAllPoints()
-            row.level:SetPoint("LEFT", row.whoButton, "RIGHT", 4, 0)
+            row.level:SetPoint("LEFT", row.whoButton:IsShown() and row.whoButton or row.senderButton, "RIGHT", 4, 0)
             row.level:SetText(level)
             row.level:SetWidth(row.level:GetStringWidth() + 4)
             row.class:ClearAllPoints()
@@ -2391,6 +2497,7 @@ function TB:UpdateWorldLog()
             end
             row:Show()
         else
+            row.entry = nil
             row.whoButton.sender = nil
             row:Hide()
         end
@@ -2400,6 +2507,7 @@ function TB:UpdateWorldLog()
 end
 
 function TB:SetActiveTab(tabName)
+    if self.openFilterMenu then self.openFilterMenu:Hide(); self.openFilterMenu = nil end
     self.State.activeTab = tabName
     if tabName ~= "My Listings" then
         self.bagPickMode = nil
@@ -2437,7 +2545,6 @@ end
 function TB:SyncFilterControls()
     local state = self.State
     self.Frames.searchField:SetText(state.search or "")
-    self.Frames.rangeCheck:SetCheckedValue(state.myLevelRange)
     self.Frames.onlineCheck:SetCheckedValue(state.onlineOnly)
 
     if state.minLevel and state.minLevel > 0 then
@@ -2451,10 +2558,26 @@ function TB:SyncFilterControls()
         self.Frames.maxLevel:SetText("")
     end
 
-    local quality
+    self:SyncFilterDropdowns()
+end
+
+function TB:SyncFilterDropdowns()
+    local state = self.State
+    self.Frames.levelDropdown:SetValue(state.myLevelRange and "range" or state.levelType)
+    self.Frames.listingTypeDropdown:SetValue(state.listingType)
+    local quality, selected, count
+    count = 0
     for quality = 1, 5 do
-        self.Frames.rarityChecks[quality]:SetCheckedValue(state.rarities[quality])
+        if state.rarities[quality] then selected = quality; count = count + 1 end
     end
+    self.Frames.rarityDropdown:SetValue(count == 1 and selected or "ALL")
+    local acceptsBounds = not state.myLevelRange and state.levelType ~= "all"
+    self.Frames.minLevel:EnableKeyboard(acceptsBounds and 1 or nil)
+    self.Frames.maxLevel:EnableKeyboard(acceptsBounds and 1 or nil)
+    self.Frames.minLevel:EnableMouse(acceptsBounds and 1 or nil)
+    self.Frames.maxLevel:EnableMouse(acceptsBounds and 1 or nil)
+    self.Frames.minLevel:SetAlpha(acceptsBounds and 1 or 0.45)
+    self.Frames.maxLevel:SetAlpha(acceptsBounds and 1 or 0.45)
 end
 
 function TB:UpdateBrowse()
@@ -2463,19 +2586,9 @@ function TB:UpdateBrowse()
     state.minLevel = tonumber(self.Frames.minLevel:GetText()) or 0
     state.maxLevel = tonumber(self.Frames.maxLevel:GetText()) or 0
 
-    self.Frames.rangeCheck.label:SetText(self:GetTraderRangeLabel())
-    if state.levelType == "required" then
-        self.Frames.levelTypeButton.label:SetText("Required")
-    else
-        self.Frames.levelTypeButton.label:SetText("Item Level")
-    end
+    self:SyncFilterDropdowns()
 
     self:RefreshCategoryPanel()
-
-    local listingType, typeButton
-    for listingType, typeButton in pairs(self.Frames.listingTypeButtons) do
-        SetButtonSelected(typeButton, listingType == state.listingType)
-    end
 
     local sortKey, sortHeader
     for sortKey, sortHeader in pairs(self.Frames.sortHeaders) do
@@ -2517,21 +2630,6 @@ function TB:UpdateBrowseRows(filtered)
         local row = self.Frames.resultRows[i]
         local listing = filtered[offset + i]
         if listing then
-            local cachedName, cachedLink, cachedQuality, cachedItemLevel, cachedRequired, cachedType, cachedSubType, cachedStack, cachedEquip, cachedTexture = GetItemInfo(listing.itemLink)
-            if cachedName then
-                listing.name = cachedName
-                listing.itemLink = cachedLink or listing.itemLink
-            end
-            if cachedTexture then
-                listing.texture = cachedTexture
-            end
-            if cachedQuality then listing.quality = self:NormalizeQuality(cachedQuality) end
-            if cachedItemLevel then listing.itemLevel = cachedItemLevel end
-            if cachedRequired then listing.requiredLevel = cachedRequired end
-            if cachedType then
-                listing.category = self:GetItemCategory(cachedType)
-                listing.tags = self:GetItemTags(listing.category, cachedSubType)
-            end
             local info = self.Quality[listing.quality] or self.Quality[1]
             row.listing = listing
             row.icon:SetTexture(listing.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -2542,11 +2640,11 @@ function TB:UpdateBrowseRows(filtered)
             end
             row.itemName:SetTextColor(info.r, info.g, info.b)
             row.quantity:SetText(tostring(listing.quantity))
-            row.required:SetText(tostring(listing.requiredLevel))
-            row.itemLevel:SetText(tostring(listing.itemLevel))
+            row.required:SetText((tonumber(listing.requiredLevel) or 0) > 0 and tostring(listing.requiredLevel) or "-")
+            row.itemLevel:SetText((tonumber(listing.itemLevel) or 0) > 0 and tostring(listing.itemLevel) or "-")
             row.price:SetText(listing.priceKnown == nil and listing.source == "CHAT" and "Ask" or self:FormatMoney(listing.totalPrice or 0))
             row.trader:SetText(listing.trader)
-            row.whoButton.trader = listing.trader
+            self:UpdateWhoButton(row.whoButton, listing.trader, listing.traderLevel)
             row.guild:SetText(listing.guild and listing.guild ~= "" and listing.guild or "-")
             row.traderLevel:SetText((tonumber(listing.traderLevel) or 0) > 0 and tostring(listing.traderLevel) or "?")
             row.class:SetText(listing.class and listing.class ~= "" and listing.class or "-")
@@ -2649,8 +2747,7 @@ function TB:UpdateTradeChains()
     end
 
     self.Frames.chainTitle:SetText(chain.name .. (chain.owner and (" - " .. chain.owner) or ""))
-    self.Frames.chainWhoButton.trader = chain.owner
-    self.Frames.chainWhoButton:Show()
+    self:UpdateWhoButton(self.Frames.chainWhoButton, chain.owner)
     local onlineCount = 0
     local filledCount = 0
     for i = 1, 12 do
@@ -2717,7 +2814,12 @@ function TB:Initialize()
     SLASH_TRADEBOARD2 = "/tb"
     SlashCmdList["TRADEBOARD"] = function(message)
         local command = string.lower(message or "")
-        if command == "probe" or command == "sync" then
+        if command == "guildloot" and TB.ShowGuildLootPopup then
+            TB:ShowGuildLootPopup()
+        elseif (command == "guildloot on" or command == "guildloot off") and TB.SetGuildLootEnabled then
+            TB:SetGuildLootEnabled(command == "guildloot on")
+            DEFAULT_CHAT_FRAME:AddMessage(TB.COLORED_TITLE .. ": guild loot notifications " .. (command == "guildloot on" and "enabled." or "disabled."))
+        elseif command == "probe" or command == "sync" then
             TB:ProbeAndSync()
             TB:SetStatus("Peer probe and listing sync requested.")
         else
@@ -2726,6 +2828,14 @@ function TB:Initialize()
     end
 
     local events = CreateFrame("Frame", nil, UIParent)
+    -- Update only small button labels, once per second while the board is visible.
+    self.Frames.main:SetScript("OnUpdate", function()
+        local remaining = TB:GetWhoCooldownRemaining()
+        if remaining ~= TB.displayedWhoCooldown then
+            TB.displayedWhoCooldown = remaining
+            TB:RefreshWhoButtons()
+        end
+    end)
     events:RegisterEvent("VARIABLES_LOADED")
     events:RegisterEvent("PLAYER_ENTERING_WORLD")
     events:RegisterEvent("PLAYER_LEVEL_UP")

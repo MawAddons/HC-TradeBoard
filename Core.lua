@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.6.1"
+TradeBoard.VERSION = "0.7.0"
 TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
 TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffa335eeTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 10
@@ -15,6 +15,7 @@ TradeBoard.MAX_WORLD_LOGS = 500
 TradeBoard.MAX_WORLD_ROWS = 10
 TradeBoard.WORLD_LOG_TTL = 43200
 TradeBoard.MAX_PROFESSION_ROWS = 10
+TradeBoard.WHO_COOLDOWN = 30
 
 TradeBoard.Listings = {}
 TradeBoard.ListingIndex = {}
@@ -80,10 +81,10 @@ TradeBoard.State = {
     category = "All Items",
     categoryView = "root",
     subCategory = nil,
-    myLevelRange = 1,
+    myLevelRange = nil,
     onlineOnly = 1,
     listingType = "ALL",
-    levelType = "required",
+    levelType = "all",
     minLevel = 0,
     maxLevel = 0,
     search = "",
@@ -247,14 +248,27 @@ function TradeBoard:OpenWorldWhisper(name)
     self:SetStatus("Whisper opened for " .. name .. ".")
 end
 
+function TradeBoard:GetWhoCooldownRemaining()
+    return math.max(0, math.ceil((self.manualWhoReadyAt or 0) - GetTime()))
+end
+
 function TradeBoard:RequestManualWho(name)
-    if not name or name == "" or not SendWho then return end
+    if not name or name == "" or not SendWho then return nil end
+    local remaining = self:GetWhoCooldownRemaining()
+    if remaining > 0 then
+        self:SetStatus("Who search is ready in " .. remaining .. "s.")
+        return nil
+    end
     name = string.gsub(name, '"', "")
+    if name == "" then return nil end
     self.PendingManualWhoName = string.lower(name)
     self.pendingManualWhoStarted = GetTime()
+    self.manualWhoReadyAt = GetTime() + self.WHO_COOLDOWN
     if SetWhoToUI then SetWhoToUI(1) end
     SendWho('n-"' .. name .. '"')
     self:SetStatus("Who search sent for " .. name .. ".")
+    if self.RefreshWhoButtons then self:RefreshWhoButtons() end
+    return 1
 end
 
 function TradeBoard:GetKnownTraderInfo(name)
@@ -262,26 +276,46 @@ function TradeBoard:GetKnownTraderInfo(name)
     if key == string.lower(UnitName("player") or "") then
         return self:GetPlayerLevel(), self:GetPlayerGuildName()
     end
+    local knownGuild = ""
     if TradeBoardDB and TradeBoardDB.worldPeople and TradeBoardDB.worldPeople[key] then
         local person = TradeBoardDB.worldPeople[key]
-        return tonumber(person.level), person.guild or ""
+        knownGuild = person.guild or ""
+        local level = tonumber(person.level)
+        if level and level > 0 then return level, knownGuild end
     end
     if self.Network and self.Network.peers and self.Network.peers[key] then
         local peer = self.Network.peers[key]
-        if peer.level or (peer.guild and peer.guild ~= "") then
-            return tonumber(peer.level), peer.guild or ""
-        end
+        if knownGuild == "" then knownGuild = peer.guild or "" end
+        local level = tonumber(peer.level)
+        if level and level > 0 then return level, knownGuild end
     end
     local i
     for i = 1, table.getn(self.Listings) do
         local listing = self.Listings[i]
-        if string.lower(listing.trader or "") == key then return tonumber(listing.traderLevel), listing.guild or "" end
+        if string.lower(listing.trader or "") == key then
+            if knownGuild == "" then knownGuild = listing.guild or "" end
+            local level = tonumber(listing.traderLevel)
+            if level and level > 0 then return level, knownGuild end
+        end
     end
     for i = 1, table.getn(self.Services) do
         local service = self.Services[i]
-        if string.lower(service.trader or "") == key then return tonumber(service.level or service.traderLevel), service.guild or "" end
+        if string.lower(service.trader or "") == key then
+            if knownGuild == "" then knownGuild = service.guild or "" end
+            local level = tonumber(service.level)
+            if not level or level < 1 then level = tonumber(service.traderLevel) end
+            if level and level > 0 then return level, knownGuild end
+        end
     end
-    return nil, ""
+    for i = 1, table.getn(self.WorldLog or {}) do
+        local entry = self.WorldLog[i]
+        if string.lower(entry.sender or "") == key then
+            if knownGuild == "" then knownGuild = entry.guild or "" end
+            local level = tonumber(entry.level)
+            if level and level > 0 then return level, knownGuild end
+        end
+    end
+    return nil, knownGuild
 end
 
 function TradeBoard:InitializeWorldLog()
@@ -348,12 +382,23 @@ function TradeBoard:RememberWorldPerson(name, guild, level, class, verifiedAt)
     if not self.WorldLog or not TradeBoardDB or not TradeBoardDB.worldPeople then self:InitializeWorldLog() end
     local key = string.lower(name)
     local existing = TradeBoardDB.worldPeople[key] or {}
+    local seenAt = tonumber(verifiedAt) or self:GetWallTime()
+    local incomingLevel = tonumber(level)
+    if not incomingLevel or incomingLevel < 1 then incomingLevel = nil end
+    -- Relayed chat often has no identity, or predates a manual WHO result.
+    -- It may fill a missing value, but must never replace newer verified data.
+    if (tonumber(existing.seenAt) or 0) > seenAt then
+        guild = existing.guild ~= "" and existing.guild or guild
+        incomingLevel = tonumber(existing.level) or incomingLevel
+        class = existing.class ~= "" and existing.class or class
+        seenAt = existing.seenAt
+    end
     TradeBoardDB.worldPeople[key] = {
         name = name or existing.name,
         guild = guild and guild ~= "" and guild or existing.guild or "",
-        level = tonumber(level) or existing.level,
+        level = incomingLevel or existing.level,
         class = class and class ~= "" and class or existing.class or "",
-        seenAt = tonumber(verifiedAt) or self:GetWallTime(),
+        seenAt = seenAt,
     }
     local person = TradeBoardDB.worldPeople[key]
     local i
@@ -371,7 +416,7 @@ function TradeBoard:RememberWorldPerson(name, guild, level, class, verifiedAt)
     end
     for i = 1, table.getn(self.Services or {}) do
         local service = self.Services[i]
-        if string.lower(service.trader or "") == key then service.guild = person.guild; service.level = person.level; service.class = person.class end
+        if string.lower(service.trader or "") == key then service.guild = person.guild; service.level = person.level or service.level; service.class = person.class end
     end
 end
 
@@ -488,28 +533,24 @@ function TradeBoard:IsListingVisible(listing)
         return nil
     end
 
-    if state.myLevelRange and (tonumber(listing.traderLevel) or 0) > 0 then
+    local traderLevel = tonumber(listing.traderLevel) or 0
+    if state.myLevelRange and traderLevel > 0 then
         local low, high = self:GetTraderRange()
-        if listing.traderLevel < low or listing.traderLevel > high then
+        if traderLevel < low or traderLevel > high then
             return nil
         end
     end
 
-    local level = listing.requiredLevel
-    if state.levelType == "item" then
-        level = listing.itemLevel
-    end
-
-    if state.minLevel and state.minLevel > 0 and level < state.minLevel then
-        return nil
-    end
-    if state.maxLevel and state.maxLevel > 0 and level > state.maxLevel then
-        return nil
+    if state.levelType == "required" or state.levelType == "item" then
+        local level = tonumber(listing.requiredLevel) or 0
+        if state.levelType == "item" then level = tonumber(listing.itemLevel) or 0 end
+        if state.minLevel and state.minLevel > 0 and level < state.minLevel then return nil end
+        if state.maxLevel and state.maxLevel > 0 and level > state.maxLevel then return nil end
     end
 
     if state.search and state.search ~= "" then
         local needle = string.lower(state.search)
-        local haystack = string.lower(listing.name)
+        local haystack = string.lower(listing.name or "")
         if not string.find(haystack, needle, 1, 1) then
             return nil
         end
@@ -524,6 +565,9 @@ function TradeBoard:GetFilteredListings()
     local i
 
     for i = 1, count do
+        -- Resolve cached item data before category/rarity/level filtering. A row
+        -- excluded here never reaches the UI, so rendering cannot repair it.
+        if self.RefreshListingMetadata then self:RefreshListingMetadata(self.Listings[i]) end
         if self:IsListingVisible(self.Listings[i]) then
             table.insert(filtered, self.Listings[i])
         end
@@ -587,7 +631,7 @@ function TradeBoard:ResetFilters()
     state.myLevelRange = nil
     state.onlineOnly = nil
     state.listingType = "ALL"
-    state.levelType = "required"
+    state.levelType = "all"
     state.minLevel = 0
     state.maxLevel = 0
     state.search = ""

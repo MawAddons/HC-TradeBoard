@@ -10,6 +10,9 @@ function GetTime() return 1000 end
 function time() return 2000000000 end
 function UnitFactionGroup() return "Alliance" end
 function GetItemInfo(link)
+    if arg and arg[1] == "vanilla" then
+        return "Linen Cloth", link, 2, 5, "Trade Goods", "Cloth", 20, "", "Interface\\Icons\\INV_Fabric_Linen_01"
+    end
     return "Linen Cloth", link, 2, 10, 5, "Trade Goods", "Cloth", 20, "", "Interface\\Icons\\INV_Fabric_Linen_01"
 end
 

@@ -1,43 +1,83 @@
--- Headless construction smoke test for the WoW 1.12 UI layout.
+-- Headless WoW 1.12 UI regression test. Run from the workspace root.
+-- Pass --preview to emit an SVG of the filter bar using recorded frame geometry.
 table.getn = table.getn or function(value) return #value end
 string.gfind = string.gfind or string.gmatch
 math.mod = math.mod or math.fmod
 math.atan2 = math.atan2 or math.atan
 
-local Frame = {}
+local objects = {}
+local Frame, methods = {}, {}
+local function fire(object, eventName, eventArgument)
+    local previousThis, previousArg1 = this, arg1
+    this, arg1 = object, eventArgument
+    local callback = object.scripts[eventName]
+    if callback then callback() end
+    this, arg1 = previousThis, previousArg1
+end
+local function newObject(kind, name, parent)
+    local object = setmetatable({ scripts = {}, points = {}, shown = true, enabled = true, parent = parent, frameType = kind, name = name }, Frame)
+    table.insert(objects, object)
+    if name then _G[name] = object end
+    return object
+end
+local function plainText(value)
+    local text = tostring(value or "")
+    text = string.gsub(text, "|c%x%x%x%x%x%x%x%x", "")
+    text = string.gsub(text, "|H[^|]+|h", "")
+    return string.gsub(text, "|[hr]", "")
+end
+function methods:SetWidth(value) self.width = value end
+function methods:SetHeight(value) self.height = value end
+function methods:GetWidth() return rawget(self, "width") or (self.frameType == "FontString" and self:GetStringWidth()) or 100 end
+function methods:GetHeight() return rawget(self, "height") or (self.frameType == "FontString" and 12) or 100 end
+function methods:SetText(value)
+    local changed = self.textValue ~= value
+    self.textValue = value or ""
+    if changed then fire(self, "OnTextChanged") end
+end
+function methods:GetText() return self.textValue or "" end
+function methods:GetStringWidth() return string.len(plainText(self.textValue)) * 6 end
+function methods:SetScript(eventName, callback) self.scripts[eventName] = callback end
+function methods:GetScript(eventName) return self.scripts[eventName] end
+function methods:Show() local changed = not self.shown; self.shown = true; if changed then fire(self, "OnShow") end end
+function methods:Hide() local changed = self.shown; self.shown = false; if changed then fire(self, "OnHide") end end
+function methods:IsShown() return self.shown end
+function methods:Enable() self.enabled = true end
+function methods:Disable() self.enabled = false end
+function methods:EnableMouse(value) self.mouseEnabled = value end
+function methods:EnableKeyboard(value) self.keyboardEnabled = value end
+function methods:SetAlpha(value) self.alpha = value end
+function methods:SetPoint(point, relative, relativePoint, x, y)
+    assert(type(point) == "string" and type(relative) == "table" and type(relativePoint) == "string", "invalid legacy SetPoint signature")
+    assert(type(x) == "number" and type(y) == "number", "SetPoint coordinates must be numeric")
+    self.points[point] = { point = point, relative = relative, relativePoint = relativePoint, x = x, y = y }
+end
+function methods:ClearAllPoints() self.points = {} end
+function methods:SetAllPoints(relative)
+    self:SetPoint("TOPLEFT", relative, "TOPLEFT", 0, 0)
+    self:SetPoint("BOTTOMRIGHT", relative, "BOTTOMRIGHT", 0, 0)
+end
+function methods:SetBackdropColor(r, g, b, a) self.backdropColor = { r, g, b, a } end
+function methods:SetBackdropBorderColor(r, g, b, a) self.borderColor = { r, g, b, a } end
+function methods:SetTextColor(r, g, b) self.textColor = { r, g, b } end
+function methods:SetTexture(value) self.textureValue = value end
+function methods:SetHyperlink(value) self.hyperlink = value end
+function methods:GetFrameLevel() return 1 end
+function methods:GetEffectiveScale() return 1 end
+function methods:GetCenter() return 500, 400 end
+function methods:GetTop() return 500 end
+function methods:GetID() return 1 end
+function methods:GetName() return self.name end
+function methods:NumLines() return 0 end
+function methods:CreateTexture(name) return newObject("Texture", name, self) end
+function methods:CreateFontString(name) return newObject("FontString", name, self) end
 Frame.__index = function(self, key)
-    local methods = {
-        SetWidth = function(object, value) object.width = value end,
-        SetHeight = function(object, value) object.height = value end,
-        GetWidth = function(object) return rawget(object, "width") or 100 end,
-        GetHeight = function(object) return rawget(object, "height") or 100 end,
-        SetText = function(object, value) object.textValue = value or "" end,
-        GetText = function(object) return object.textValue or "" end,
-        GetStringWidth = function(object) return string.len(object.textValue or "") * 6 end,
-        SetScript = function(object, event, callback) object.scripts[event] = callback end,
-        GetScript = function(object, event) return object.scripts[event] end,
-        Show = function(object) object.shown = true end,
-        Hide = function(object) object.shown = false end,
-        IsShown = function(object) return object.shown end,
-        Enable = function(object) object.enabled = true end,
-        Disable = function(object) object.enabled = false end,
-        GetFrameLevel = function() return 1 end,
-        GetEffectiveScale = function() return 1 end,
-        GetCenter = function() return 500, 400 end,
-        GetTop = function() return 500 end,
-        GetID = function() return 1 end,
-        CreateTexture = function(object) return setmetatable({ scripts = {}, shown = true, parent = object }, Frame) end,
-        CreateFontString = function(object) return setmetatable({ scripts = {}, shown = true, parent = object, textValue = "" }, Frame) end,
-    }
     if methods[key] then return methods[key] end
-    return function() end
+    -- Unknown data fields must be nil, not fake methods; this catches stale rows.
+    if string.find(key, "^[A-Z]") then return function() end end
+    return nil
 end
-
-function CreateFrame(frameType, name, parent)
-    local frame = setmetatable({ scripts = {}, shown = true, parent = parent, frameType = frameType }, Frame)
-    if name then _G[name] = frame end
-    return frame
-end
+function CreateFrame(frameType, name, parent) return newObject(frameType, name, parent) end
 
 UIParent = CreateFrame("Frame", "UIParent")
 Minimap = CreateFrame("Frame", "Minimap", UIParent)
@@ -47,29 +87,43 @@ DEFAULT_CHAT_FRAME = CreateFrame("Frame", "ChatFrame1", UIParent)
 UISpecialFrames = {}
 SlashCmdList = {}
 
+local now, whoQueries = 1000, {}
+local openedChat, openedItem
 function getglobal(name) return _G[name] end
 function UnitName() return "Tester" end
 function UnitLevel() return 30 end
 function UnitFactionGroup() return "Alliance" end
 function GetGuildInfo() return "Test Guild" end
-function GetTime() return 1000 end
-function time() return 2000000000 end
+function GetTime() return now end
+function time() return 2000000000 + math.floor(now - 1000) end
 function date() return "09-15 12:00" end
 function GetCursorPosition() return 500, 400 end
 function GetNumSkillLines() return 0 end
 function GetChannelName() return 0 end
 function GetContainerNumSlots() return 0 end
-function GetItemInfo(link) return "Linen Cloth", link, 2, 10, 5, "Trade Goods", "Cloth", 20, "", "Interface\\Icons\\INV_Fabric_Linen_01" end
+function GetItemInfo(link)
+    -- Actual Vanilla tuple: type is fifth; there is no extra required-level slot.
+    if string.find(tostring(link), "3302", 1, 1) then
+        return "Brackwater Boots", link, 2, 10, "Armor", "Mail", 1, "INVTYPE_FEET", "Interface\\Icons\\INV_Boots_03"
+    elseif string.find(tostring(link), "9991", 1, 1) then
+        return "Test Rare Ring", link, 3, 35, "Armor", "Miscellaneous", 1, "INVTYPE_FINGER", "Interface\\Icons\\INV_Jewelry_Ring_01"
+    end
+    return "Linen Cloth", link, 2, 0, "Trade Goods", "Cloth", 20, "", "Interface\\Icons\\INV_Fabric_Linen_01"
+end
 function IsShiftKeyDown() return nil end
 function CursorHasItem() return nil end
 function ClearCursor() end
-function ChatFrame_OpenChat() end
+function ChatFrame_OpenChat(text) openedChat = text end
+function SetItemRef(hyperlink) openedItem = hyperlink end
 function AddFriend() end
 function ChatFrame_RemoveChannel() end
+function SetWhoToUI() end
+function SendWho(query) table.insert(whoQueries, query) end
 
 dofile("HC-Tradeboard/Core.lua")
 dofile("HC-Tradeboard/Network.lua")
 dofile("HC-Tradeboard/UI.lua")
+dofile("HC-Tradeboard/GuildLoot.lua")
 
 local TB = TradeBoard
 assert(TB.Frames.main.width == 1180 and TB.Frames.main.height == 720, "main window did not use approved larger layout")
@@ -79,32 +133,227 @@ assert(table.getn(TB.Frames.professionRows) == 10, "Professions did not create t
 assert(table.getn(TB.Frames.worldLogRows) == 10, "World Trade did not create ten rows")
 assert(TB.Frames.browseScrollbar and TB.Frames.worldScrollbar and TB.Frames.professionScrollbar, "classic scrollbars were not created")
 
+local function click(button)
+    assert(button:IsShown() and button.enabled, "cannot click hidden or disabled button")
+    fire(button, "OnClick", "LeftButton")
+end
+local function choose(dropdown, value)
+    click(dropdown)
+    assert(dropdown.menu:IsShown(), "dropdown menu did not open")
+    local i
+    for i = 1, table.getn(dropdown.options) do
+        if dropdown.options[i].value == value then
+            click(dropdown.options[i])
+            assert(not dropdown.menu:IsShown() and dropdown.value == value, "dropdown selection did not close/apply")
+            return
+        end
+    end
+    error("dropdown option missing: " .. tostring(value))
+end
+local function findRow(rows, field, predicate)
+    local i
+    for i = 1, table.getn(rows) do
+        if rows[i][field] and predicate(rows[i][field]) then return rows[i] end
+    end
+    error("expected visible row missing")
+end
+
+-- Single-line mockup layout: every direct label/control must fit without overlap.
+local filterBar = TB.Frames.browseFilterBar
+local controls = {
+    TB.Frames.searchField, TB.Frames.levelDropdown, TB.Frames.minLevel,
+    TB.Frames.maxLevel, TB.Frames.rarityDropdown, TB.Frames.listingTypeDropdown,
+    TB.Frames.onlineCheck, TB.Frames.clearFilters,
+}
+local intervals = {}
+local function recordInterval(object, label)
+    local point = object.points.LEFT or object.points.RIGHT
+    assert(point and point.relative == filterBar and point.y == 0, label .. " is not centered in the single filter row")
+    local left = point.relativePoint == "RIGHT" and filterBar:GetWidth() + point.x - object:GetWidth() or point.x
+    assert(left >= 0 and left + object:GetWidth() <= filterBar:GetWidth(), label .. " leaves the filter bar")
+    assert(object:GetHeight() <= filterBar:GetHeight(), label .. " is taller than the filter bar")
+    table.insert(intervals, { left = left, right = left + object:GetWidth(), object = object, label = label })
+end
+local i
+for i = 1, table.getn(controls) do recordInterval(controls[i], "filter control " .. i) end
+for i = 1, table.getn(objects) do
+    local object = objects[i]
+    if object.parent == filterBar and object.frameType == "FontString" and object ~= TB.Frames.searchPlaceholder then
+        recordInterval(object, object:GetText())
+    end
+end
+table.sort(intervals, function(a, b) return a.left < b.left end)
+for i = 2, table.getn(intervals) do
+    assert(intervals[i].left >= intervals[i - 1].right, intervals[i - 1].label .. " overlaps " .. intervals[i].label)
+end
+assert(filterBar:GetHeight() == 42, "filter row grew beyond the approved compact layout")
+
 local link = "|cff1eff00|Hitem:2589:0:0:0|h[Linen Cloth]|h|r"
-TB.Listings = {{ id = "one", owner = "Seller", trader = "Seller", itemLink = link, name = "Linen Cloth", texture = "x", quality = 2, requiredLevel = 5, itemLevel = 10, quantity = 20, totalPrice = 20000, traderLevel = 30, class = "Mage", guild = "Guild", orderType = "SELL", category = "Trade Goods", tags = {}, online = 1 }}
+local mailLink = "|cff1eff00|Hitem:3302:0:0:0|h[Brackwater Boots]|h|r"
+local ringLink = "|cff0070dd|Hitem:9991:0:0:0|h[Test Rare Ring]|h|r"
+local function listing(id, itemLink, trader, level, price, orderType)
+    return { id = id, owner = trader, trader = trader, itemLink = itemLink, name = TB:ExtractItemName(itemLink), quantity = 1,
+        totalPrice = price, traderLevel = level, class = "", guild = "Guild", orderType = orderType or "SELL",
+        quality = 2, category = "Miscellaneous", tags = {}, online = 1, lastSeen = GetTime(), lastSeenAt = time() }
+end
+TB.Listings = {
+    listing("one", link, "Seller", 30, 20000),
+    listing("mail", mailLink, "UnknownSeller", 0, 30000),
+    listing("ring", ringLink, "RingSeller", 0, 40000, "BUY"),
+}
+TB.Listings[1].quantity = 20
 TB:RebuildListingIndex()
 TB:UpdateBrowse()
-assert(TB.Frames.resultRows[1].price:GetText() == "2g 0s 0c", "Browse did not display total price")
-assert(TB.Frames.resultRows[1].whoButton.trader == "Seller", "Browse Who button was not linked to seller")
+local knownRow = findRow(TB.Frames.resultRows, "listing", function(value) return value.id == "one" end)
+assert(knownRow.price:GetText() == "2g 0s 0c", "Browse did not display total price")
+assert(not knownRow.whoButton:IsShown(), "Browse offered Who when seller level was already known")
 
 TB.MyListings = { TB.Listings[1] }
 TB:UpdateMyListings()
 assert(TB.Frames.myListingRows[1].price:GetText() == "2g 0s 0c", "My Listings did not display total price")
 
-TB.Services = {{ owner = "Crafter", trader = "Crafter", guild = "Crafters", profession = "Enchanting", rank = 300, maxRank = 300, note = "Crusader", source = "CHAT", level = 60, class = "Priest", online = 1 }}
+choose(TB.Frames.listingTypeDropdown, "BUY")
+assert(table.getn(TB:GetFilteredListings()) == 1 and TB.Frames.resultRows[1].listing.id == "ring", "Wanted dropdown did not filter Browse")
+choose(TB.Frames.listingTypeDropdown, "ALL")
+choose(TB.Frames.rarityDropdown, 3)
+assert(table.getn(TB:GetFilteredListings()) == 1 and TB.Frames.resultRows[1].listing.id == "ring", "Rare dropdown did not filter Browse")
+choose(TB.Frames.rarityDropdown, "ALL")
+choose(TB.Frames.levelDropdown, "required")
+TB.Frames.minLevel:SetText("9"); TB.Frames.maxLevel:SetText("12"); fire(TB.Frames.maxLevel, "OnEnterPressed")
+assert(table.getn(TB:GetFilteredListings()) == 1 and TB.Frames.resultRows[1].listing.id == "mail", "Required Min/Max did not use item requirement")
+choose(TB.Frames.levelDropdown, "all")
+assert(table.getn(TB:GetFilteredListings()) == 3, "All level mode still applied stale Min/Max bounds")
+assert(not TB.Frames.minLevel.keyboardEnabled and not TB.Frames.maxLevel.mouseEnabled, "All level mode left irrelevant bounds enabled")
+choose(TB.Frames.levelDropdown, "range")
+assert(TB.State.myLevelRange and TB.Frames.levelDropdown.value == "range", "My range dropdown did not set its filter")
+click(TB.Frames.clearFilters)
+
+-- Exercise actual sidebar clicks, including metadata repaired before filtering.
+local armorButton = findRow(TB.Frames.categoryButtons, "categoryEntry", function(value) return value.name == "Armor" end)
+click(armorButton)
+local mailButton = findRow(TB.Frames.categoryButtons, "categoryEntry", function(value) return value.name == "Mail" end)
+click(mailButton)
+assert(TB.State.category == "Armor" and TB.State.subCategory == "Mail", "sidebar clicks did not select Armor > Mail")
+assert(table.getn(TB:GetFilteredListings()) == 1 and TB.Frames.resultRows[1].listing.id == "mail", "Armor > Mail omitted the mail listing")
+TB.Frames.searchField:SetText("mail"); choose(TB.Frames.rarityDropdown, 3); choose(TB.Frames.listingTypeDropdown, "BUY")
+TB.Frames.minLevel:SetText("40"); TB.Frames.maxLevel:SetText("50")
+click(TB.Frames.levelDropdown)
+click(TB.Frames.rarityDropdown)
+assert(not TB.Frames.levelDropdown.menu:IsShown(), "opening another dropdown left overlapping menus open")
+click(TB.Frames.clearFilters)
+assert(TB.State.category == "All Items" and not TB.State.subCategory and not TB.State.myLevelRange, "Clear did not reset category/level selection")
+assert(TB.Frames.searchField:GetText() == "" and TB.Frames.minLevel:GetText() == "" and TB.Frames.maxLevel:GetText() == "", "Clear did not clear text filters")
+assert(TB.Frames.levelDropdown.value == "all" and TB.Frames.rarityDropdown.value == "ALL" and TB.Frames.listingTypeDropdown.value == "ALL", "Clear did not synchronize dropdown labels")
+assert(not TB.Frames.onlineCheck.checked and not TB.Frames.rarityDropdown.menu:IsShown() and table.getn(TB:GetFilteredListings()) == 3, "Clear did not restore all listings")
+
+TB.Services = {
+    { owner = "Crafter", trader = "Crafter", guild = "Crafters", profession = "Enchanting", rank = 300, maxRank = 300, note = "Crusader", source = "CHAT", level = 60, class = "Priest", online = 1 },
+    { owner = "UnknownSeller", trader = "UnknownSeller", guild = "Crafters", profession = "Alchemy", rank = 0, maxRank = 0, note = "Transmute", source = "CHAT", level = 0, online = 1 },
+}
 TB:RebuildServiceIndex()
 TB:UpdateProfessions()
-assert(TB.Frames.professionRows[1].source:GetText() == "Chat", "Profession chat source was not displayed")
-assert(TB.Frames.professionRows[1].whoButton.trader == "Crafter", "Profession Who button was not linked to crafter")
+local knownCrafter = findRow(TB.Frames.professionRows, "service", function(value) return value.trader == "Crafter" end)
+assert(knownCrafter.source:GetText() == "Chat" and not knownCrafter.whoButton:IsShown(), "known Chat crafter did not hide Who")
 
 TB.Chains = { TB:BuildChainFromSaved({ name = "Test Chain", members = { "Tester" } }, "Tester", 1) }
 TB.State.selectedChain = 1
 TB:UpdateTradeChains()
-assert(TB.Frames.chainWhoButton.trader == "Tester", "Trade Chain owner Who button was not populated")
+assert(not TB.Frames.chainWhoButton:IsShown(), "own-character Trade Chain Who button should be hidden")
 
 TradeBoardDB = { worldLog = {}, worldPeople = {} }
 TB.WorldLog = TradeBoardDB.worldLog
 TB:CaptureWorldMessage("WTS " .. link .. " 2g", "Seller", "World")
+TB:CaptureWorldMessage("WTS " .. mailLink .. " 3g", "UnknownSeller", "World")
 TB:UpdateWorldLog()
-assert(TB.Frames.worldLogRows[1].whoButton.sender == "Seller", "World Who button was not linked to sender")
+local knownWorld = findRow(TB.Frames.worldLogRows, "entry", function(value) return value.sender == "Seller" end)
+assert(not knownWorld.whoButton:IsShown(), "World ignored seller level already available in Browse")
+TB:UpdateBrowse()
+local unknownBrowse = findRow(TB.Frames.resultRows, "listing", function(value) return value.id == "mail" end)
+local unknownRing = findRow(TB.Frames.resultRows, "listing", function(value) return value.id == "ring" end)
+local unknownWorld = findRow(TB.Frames.worldLogRows, "entry", function(value) return value.sender == "UnknownSeller" end)
+local unknownProfession = findRow(TB.Frames.professionRows, "service", function(value) return value.trader == "UnknownSeller" end)
+local function assertUnknownButtons(text, enabled)
+    local buttons = { unknownBrowse.whoButton, unknownRing.whoButton, unknownWorld.whoButton, unknownProfession.whoButton }
+    local index
+    for index = 1, table.getn(buttons) do
+        assert(buttons[index]:IsShown() and buttons[index].label:GetText() == text and buttons[index].enabled == enabled, "Who countdown is not shared across Browse/World/Professions")
+    end
+end
+assertUnknownButtons("?", true)
+click(unknownBrowse.whoButton)
+assert(table.getn(whoQueries) == 1 and whoQueries[1] == 'n-"UnknownSeller"', "Browse Who did not request the correct character")
+assertUnknownButtons("30", false)
+assert(not TB:RequestManualWho("RingSeller") and table.getn(whoQueries) == 1, "cooldown allowed a second server query")
+now = 1017
+fire(TB.Frames.main, "OnUpdate")
+assertUnknownButtons("13", false)
+click(TB.Frames.tabs["World Trade"])
+assert(unknownWorld.whoButton.label:GetText() == "13", "tab switch reset the shared cooldown")
+click(TB.Frames.tabs["Professions"])
+assert(unknownProfession.whoButton.label:GetText() == "13", "Professions tab lost the active countdown")
+now = 1030
+fire(TB.Frames.main, "OnUpdate")
+assertUnknownButtons("?", true)
+click(unknownWorld.whoButton)
+assert(table.getn(whoQueries) == 2, "Who was not reusable after thirty seconds")
+TB:RememberWorldPerson("UnknownSeller", "Verified Guild", 42, "Mage", time())
+TB:UpdateBrowse(); TB:UpdateWorldLog(); TB:UpdateProfessions(); TB:RefreshWhoButtons()
+assert(not unknownBrowse.whoButton:IsShown() and not unknownWorld.whoButton:IsShown() and not unknownProfession.whoButton:IsShown(), "resolved Who information did not hide buttons across tabs")
+assert(unknownRing.whoButton:IsShown() and unknownRing.whoButton.label:GetText() == "30" and not unknownRing.whoButton.enabled, "another seller lost the shared cooldown when a Who response arrived")
+assert(findRow(TB.Frames.resultRows, "listing", function(value) return value.id == "mail" end).listing.traderLevel == 42, "Who identity update removed or failed to enrich Browse listing")
 
-print("HC TradeBoard UI smoke test passed")
+-- Guild notifications construct real popup controls and preserve their actions.
+local queuedBeforeGuild = table.getn(TB.SendQueue or {})
+TB:CaptureGuildLootMessage("Anyone need anything? " .. link .. mailLink, "Frank")
+TB:CaptureGuildLootMessage(ringLink, "Frank")
+local guildPopup = TB.GuildLoot.frame
+assert(guildPopup and guildPopup:IsShown() and guildPopup:GetWidth() == 330 and guildPopup:GetHeight() == 305, "guild offer did not open its loot-sized popup")
+assert(TB.GuildLoot.active.sender == "Frank" and table.getn(TB.GuildLoot.active.links) == 3, "linked guild follow-up items did not join the offer")
+assert(guildPopup.rows[1].itemLink == link and guildPopup.rows[3].itemLink == ringLink and not guildPopup.rows[4]:IsShown(), "guild popup item rows were incorrect")
+fire(guildPopup.rows[1], "OnEnter")
+assert(GameTooltip.hyperlink == "item:2589:0:0:0", "guild loot item did not show its tooltip")
+click(guildPopup.rows[1])
+assert(openedItem == "item:2589:0:0:0", "guild loot item click did not open the item")
+click(guildPopup.whisper)
+assert(openedChat == "/w Frank ", "guild popup whisper targeted the wrong character")
+assert(table.getn(TB.SendQueue or {}) == queuedBeforeGuild, "guild popup created peer/chat traffic")
+click(guildPopup.dismiss)
+assert(not guildPopup:IsShown() and not TB.GuildLoot.active, "guild popup did not dismiss")
+
+if arg and arg[1] == "--preview" then
+    local function xml(value)
+        local result = plainText(value)
+        result = string.gsub(result, "&", "&amp;"); result = string.gsub(result, "<", "&lt;"); result = string.gsub(result, ">", "&gt;")
+        return result
+    end
+    local function color(value, fallback)
+        if not value then return fallback end
+        return string.format("#%02x%02x%02x", math.floor(value[1] * 255), math.floor(value[2] * 255), math.floor(value[3] * 255))
+    end
+    print("FILTER_PREVIEW_BEGIN")
+    print('<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="130" viewBox="0 0 1180 130">')
+    print('<rect width="1180" height="130" fill="#11100c"/><text x="16" y="25" fill="#d9b85c" font-size="16" font-family="serif">HC TradeBoard - actual Lua filter geometry</text>')
+    print('<rect x="16" y="44" width="1148" height="42" rx="3" fill="#070706" stroke="#816b36"/>')
+    for i = 1, table.getn(intervals) do
+        local interval, object = intervals[i], intervals[i].object
+        local x, width = 16 + interval.left, interval.right - interval.left
+        if object == TB.Frames.onlineCheck then
+            print('<rect x="' .. (x + 3) .. '" y="56" width="18" height="18" rx="2" fill="#0d0d0b" stroke="#8b713b"/>')
+            if object.checked then print('<path d="M' .. (x + 5) .. ' 64 l4 4 l10 -12" stroke="#dfbd3e" fill="none" stroke-width="3"/>') end
+        elseif object.frameType ~= "FontString" then
+            print('<rect x="' .. x .. '" y="51" width="' .. width .. '" height="28" rx="3" fill="' .. color(object.backdropColor, "#161510") .. '" stroke="' .. color(object.borderColor, "#8b713b") .. '"/>')
+        end
+        local label = object.label and object.label:GetText() or object:GetText()
+        if object == TB.Frames.searchField then label = "Search items..." end
+        local textX, anchor = x + 8, "start"
+        if object.frameType == "FontString" then textX = x
+        elseif object == TB.Frames.onlineCheck then textX = x + 26
+        elseif object == TB.Frames.clearFilters then textX = x + width / 2; anchor = "middle" end
+        print('<text x="' .. textX .. '" y="69" text-anchor="' .. anchor .. '" fill="#d9c990" font-size="12" font-family="Arial">' .. xml(label) .. '</text>')
+        if object.options then print('<path d="M' .. (x + width - 18) .. ' 61 h10 l-5 7z" fill="#d6ad35"/>') end
+    end
+    print('<text x="16" y="113" fill="#aaa28d" font-size="11" font-family="Arial">Geometry preview only; WoW supplies the final fonts and textures.</text></svg>')
+    print("FILTER_PREVIEW_END")
+end
+
+print("HC TradeBoard UI smoke test passed: dropdowns, filter geometry, Mail category, shared Who cooldown, identity and guild loot popup")

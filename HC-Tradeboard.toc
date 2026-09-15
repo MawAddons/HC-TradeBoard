@@ -1,10 +1,11 @@
 ## Interface: 11200
 ## Title: |cffb8c0ccHC|r |cffa335eeTradeBoard|r
-## Notes: v0.6.1: a cozy little marketplace for heroes without an auction house
+## Notes: v0.7.0: a cozy little marketplace for heroes without an auction house
 ## Author: OctoWow Community
-## Version: 0.6.1
+## Version: 0.7.0
 ## SavedVariables: TradeBoardDB
 
 Core.lua
 Network.lua
 UI.lua
+GuildLoot.lua

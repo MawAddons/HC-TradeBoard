@@ -1,4 +1,4 @@
-# HC TradeBoard 0.6.1
+# HC TradeBoard 0.7.0
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -33,17 +33,20 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - In **Professions**, use **List / Edit Mine** to publish services learned by the current character, including skill rank and an optional short note.
 - The Professions tab includes the three guilds with the most distinct providers. Click a guild sigil to filter the service table; click it again to clear the filter.
 - Press Enter to open normal chat, then Shift-left-click a listed item to insert its real item link.
+- Guild item offers automatically open a compact loot window. Click an item to inspect it, or **Whisper** to draft a reply. `/tb guildloot off` disables notifications; `/tb guildloot on` enables them again.
 
 ## Features
 
 - Browse, My Listings, Trade Chains, Professions, and World Trade tabs.
-- A searchable, twelve-hour World and Trade-channel archive for case-insensitive WTS, WTB, and LFW posts. It is shared with peers using duplicate suppression and includes inline hoverable/clickable item links. Idea credit: Svenne :)
-- No automatic `/who` calls. Every seller and crafter has a `?` button for a player-initiated visible Who lookup; matching level, class, and guild data is cached and shared with peers.
+- A searchable World and Trade-channel archive retaining up to twelve hours and the newest 500 case-insensitive WTS, WTB, and LFW posts. It is shared with peers using duplicate suppression and includes inline hoverable/clickable item links. Idea credit: Svenne :)
+- No automatic `/who` calls. Sellers with unknown levels have a `?` button for a player-initiated visible Who lookup. All lookup buttons share a 30-second countdown; buttons disappear once the level is known. Matching level, class, and guild data is shared across tabs and peers.
+- Guild give/sell offers with item links open a dismissible, draggable loot popup. Item-only followups from that guildmate within 60 seconds join the offer. Queues and duplicate detection are bounded, and the feature sends no additional chat or peer traffic.
 - Item-linked WTS/WTB chat messages appear as expiring **Chat** offers in Browse. Recognized crafting offers such as Crusader appear as expiring, clearly labelled **Chat** services in Professions.
 - A classic minimap coin button for opening and closing HC TradeBoard.
 - Search, category, rarity, trader-level, online, listing-type, and item-level filters.
 - Simple Armor and Weapons subcategories without the full Auction House category tree.
-- Toggle between Required Level and Item Level by clicking the level-type button.
+- One AH-style filter row with **Level**, **Rarity**, and **Listing Type** dropdowns, Min/Max fields, Online and Clear. Level defaults to **All**; **My range** explicitly enables the seller-level +/-5 filter.
+- Item metadata is normalized for both stock 1.12 and extended client APIs before filtering. Previously misclassified cached items repair automatically, including Armor > Mail.
 - Click any table header to sort ascending or descending, including numeric total-price sorting.
 - Compact AH-style layouts and classic WoW scrollbars across Browse, My Listings, Trade Chains, Professions, and World Trade.
 - Hover a Browse result to see the normal WoW item-stat tooltip stacked above the HC TradeBoard listing summary.
@@ -66,9 +69,16 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 ## Current limitations
 
 - Every player who wants to see or publish listings needs HC TradeBoard installed and must be able to join the same custom channel. Whether Horde and Alliance share that custom channel depends on the server implementation.
+- Guild loot popups are shown only to guildmates running the addon and receiving the original guild chat. Offers are inferred from wording such as WTS, selling, free, or "Anyone need anything?"; unrelated item mentions are ignored.
+- Stock 1.12 exposes required level but not actual item level in `GetItemInfo`; unavailable iLvl is shown as `-`. Uncached item categories become filterable when the client provides their metadata.
+- The 30-second Who timer tracks lookups initiated by TradeBoard buttons; independent `/who` commands and server-specific throttles may impose an additional wait.
 - Listings are an advertisement only. HC TradeBoard does not move items, money, or automate trades.
 - Remote listings and profession services are cached locally and become offline after ten minutes without a refresh. They remain until an explicit withdrawal is received or the saved cache is cleared, so an undelivered withdrawal can leave an old offline advertisement visible.
 - Version 0.6.0 uses the `TB2` protocol because listing prices changed from per-item to total price. Peers must update to 0.6.0 or newer to exchange data.
 - Chat-offer parsing is deliberately conservative: Browse requires a real item link, profession imports require a recognized service keyword, and quantity/price extraction is best effort. Chat-derived entries are visibly labelled and expire after twelve hours.
 - SavedVariables are shared by characters on one WoW account. Separate accounts share the World/Trade archive and Who-derived data only while their clients can meet through the peer channel.
 - The first live build publishes sale listings. Wanted-order creation is planned but not yet in the posting form.
+
+## Regression checks
+
+From the parent workspace directory, run `HC-Tradeboard/tests/data_regressions.lua`, `HC-Tradeboard/tests/world_log_smoke.lua`, `HC-Tradeboard/tests/ui_smoke.lua`, and `HC-Tradeboard/tests/guild_loot_smoke.lua` with a Lua test runtime (Fengari supported). The checks cover legacy/modern item tuples, all categories, delayed item caching, ring retention after Who enrichment, shared cooldown, dropdown interactions, and guild notifications. The UI checks use mocked game frames; final game rendering still needs a 1.12 client check.
