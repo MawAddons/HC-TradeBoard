@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.7.4"
+TradeBoard.VERSION = "0.7.5"
 TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
 TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffa335eeTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 10

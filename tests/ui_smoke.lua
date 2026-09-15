@@ -60,6 +60,7 @@ end
 function methods:SetBackdropColor(r, g, b, a) self.backdropColor = { r, g, b, a } end
 function methods:SetBackdropBorderColor(r, g, b, a) self.borderColor = { r, g, b, a } end
 function methods:SetTextColor(r, g, b) self.textColor = { r, g, b } end
+function methods:SetJustifyV(value) self.justifyV = value end
 function methods:SetTexture(value) self.textureValue = value end
 function methods:SetHyperlink(value) self.hyperlink = value end
 function methods:GetFrameLevel() return 1 end
@@ -302,6 +303,85 @@ assert(not unknownBrowse.whoButton:IsShown() and not unknownWorld.whoButton:IsSh
 assert(unknownRing.whoButton:IsShown() and unknownRing.whoButton.label:GetText() == "30" and not unknownRing.whoButton.enabled, "another seller lost the shared cooldown when a Who response arrived")
 assert(findRow(TB.Frames.resultRows, "listing", function(value) return value.id == "mail" end).listing.traderLevel == 42, "Who identity update removed or failed to enrich Browse listing")
 
+-- World message text and link hitboxes must stay inside their bordered rows.
+local function assertWorldMessageLayout(row)
+    local function top(object)
+        if object == row then return 0 end
+        local point = object.points.TOPLEFT or object.points.TOPRIGHT or object.points.LEFT
+        assert(point, "World row control has no recorded anchor")
+        if point.point == "LEFT" then
+            return top(point.relative) + (point.relative:GetHeight() - object:GetHeight()) / 2 - point.y
+        end
+        assert(point.relativePoint == "TOPLEFT" or point.relativePoint == "TOPRIGHT", "unexpected World row top anchor")
+        return top(point.relative) - point.y
+    end
+    local headerBottom = 0
+    local header = { row.metaPrefix, row.senderButton, row.whoButton, row.level, row.class, row.guildButton, row.source }
+    local index
+    for index = 1, table.getn(header) do
+        local object = header[index]
+        if object:IsShown() then headerBottom = math.max(headerBottom, top(object) + object:GetHeight()) end
+    end
+    local previous, usedWidth, visibleCount = nil, 0, 0
+    for index = 1, table.getn(row.messageParts) do
+        local part = row.messageParts[index]
+        if part:IsShown() then
+            visibleCount = visibleCount + 1
+            assert(top(part) >= headerBottom, "World message overlaps its seller/header line")
+            assert(row:GetHeight() - top(part) - part:GetHeight() >= 4, "World message text/link hitbox crosses the bottom border or lacks padding")
+            if previous then
+                local point = part.points.LEFT
+                assert(point and point.relative == previous and point.relativePoint == "RIGHT" and point.x == 0 and point.y == 0,
+                    "World inline text and item links are not adjacent")
+                assert(part:GetHeight() == previous:GetHeight(), "World message segments have mismatched line heights")
+            else
+                assert(part.points.TOPLEFT.relative == row and part.points.TOPLEFT.x == 7, "World message lost its left padding")
+            end
+            assert(part.text.points.TOPLEFT.relative == part and part.text.points.BOTTOMRIGHT.relative == part,
+                "World message font no longer fits its clickable segment")
+            assert(part.text.justifyV == "MIDDLE", "World message text is not vertically centered within its segment")
+            usedWidth = usedWidth + part:GetWidth()
+            assert(7 + usedWidth <= row:GetWidth() - 7, "World message overflowed the right border")
+            previous = part
+        else
+            assert(not part.itemLink, "hidden/reused World message segment retained a clickable item")
+        end
+    end
+    assert(visibleCount > 0, "World message has no visible segments")
+    return usedWidth, visibleCount
+end
+for i = 1, table.getn(TB.Frames.worldLogRows) do
+    if TB.Frames.worldLogRows[i].entry then assertWorldMessageLayout(TB.Frames.worldLogRows[i]) end
+end
+local savedWorldLog = TB.WorldLog
+local reusedWorldRow = TB.Frames.worldLogRows[1]
+TB.WorldLog = { { sender = "LongSeller", channel = "World", type = "WTS", timestamp = time(), level = 0,
+    message = "WTS " .. link .. " " .. mailLink .. " " .. ringLink .. " " .. string.rep("long offer ", 200) .. link } }
+TB:UpdateWorldLog()
+local longWidth, longParts = assertWorldMessageLayout(reusedWorldRow)
+assert(longWidth == 1082 and longParts > 3, "long World offer did not exercise clipped multi-link segments")
+fire(reusedWorldRow.messageParts[2], "OnEnter")
+assert(GameTooltip:IsShown() and GameTooltip.hyperlink == "item:2589:0:0:0", "World inline item lost its hover tooltip")
+click(reusedWorldRow.messageParts[2])
+assert(openedItem == "item:2589:0:0:0", "World inline item click did not open the item")
+fire(reusedWorldRow.messageParts[2], "OnLeave")
+assert(not GameTooltip:IsShown(), "World inline item tooltip did not close")
+TB.WorldLog = { { sender = "ShortSeller", channel = "Trade", type = "WTS", timestamp = time(), level = 30,
+    message = "WTS " .. mailLink .. " 3g" } }
+TB:UpdateWorldLog()
+assert(TB.Frames.worldLogRows[1] == reusedWorldRow and reusedWorldRow.entry.sender == "ShortSeller", "World message frame was not reused")
+local shortWidth, shortParts = assertWorldMessageLayout(reusedWorldRow)
+assert(shortWidth < longWidth and shortParts == 3, "short reused World row retained long message segments")
+fire(reusedWorldRow.messageParts[2], "OnEnter")
+assert(GameTooltip.hyperlink == "item:3302:0:0:0", "reused World item tooltip retained the previous seller's item")
+click(reusedWorldRow.messageParts[2])
+assert(openedItem == "item:3302:0:0:0", "reused World item click retained the previous seller's item")
+click(reusedWorldRow.messageParts[3])
+assert(openedItem == "item:3302:0:0:0", "plain World message text unexpectedly opened an item")
+fire(reusedWorldRow.messageParts[2], "OnLeave")
+TB.WorldLog = savedWorldLog
+TB:UpdateWorldLog()
+
 -- Guild notifications construct real popup controls and preserve their actions.
 local queuedBeforeGuild = table.getn(TB.SendQueue or {})
 TB:CaptureGuildLootMessage("Anyone need anything? " .. link .. mailLink, "Frank")
@@ -394,4 +474,4 @@ if arg and arg[1] == "--preview" then
     print("FILTER_PREVIEW_END")
 end
 
-print("HC TradeBoard UI smoke test passed: dropdowns, filter geometry, Mail category, shared Who cooldown, identity, guild loot popup and memory label")
+print("HC TradeBoard UI smoke test passed: dropdowns, filter geometry, Mail category, shared Who cooldown, identity, World message bounds/link reuse, guild loot popup and memory label")

@@ -1,4 +1,4 @@
-# HC TradeBoard 0.7.4
+# HC TradeBoard 0.7.5
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 

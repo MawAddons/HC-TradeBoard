@@ -2424,10 +2424,12 @@ function TB:CreateWorldLogPane(parent)
         local partIndex
         for partIndex = 1, 12 do
             local part = CreateFrame("Button", nil, row)
-            part:SetHeight(20)
+            -- Keep the message line and its clickable links inside the 40px row.
+            part:SetHeight(14)
             part.text = CreateText(part, "", "GameFontHighlightSmall", 0.92, 0.90, 0.84)
             part.text:SetAllPoints(part)
             part.text:SetJustifyH("LEFT")
+            part.text:SetJustifyV("MIDDLE")
             part:SetScript("OnEnter", function()
                 if this.itemLink then
                     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
@@ -2522,7 +2524,7 @@ function TB:UpdateWorldLog()
                 if previousPart then
                     part:SetPoint("LEFT", previousPart, "RIGHT", 0, 0)
                 else
-                    part:SetPoint("TOPLEFT", row, "TOPLEFT", 7, -23)
+                    part:SetPoint("TOPLEFT", row, "TOPLEFT", 7, -22)
                 end
                 if segment and usedWidth < 1082 then
                     part.itemLink = segment.itemLink
