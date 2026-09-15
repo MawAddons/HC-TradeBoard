@@ -2858,11 +2858,12 @@ function TB:Initialize()
     SLASH_TRADEBOARD2 = "/tb"
     SlashCmdList["TRADEBOARD"] = function(message)
         local command = string.lower(message or "")
-        if command == "guildloot" and TB.ShowGuildLootPopup then
+        if (command == "loot" or command == "guildloot") and TB.ShowGuildLootPopup then
             TB:ShowGuildLootPopup()
-        elseif (command == "guildloot on" or command == "guildloot off") and TB.SetGuildLootEnabled then
-            TB:SetGuildLootEnabled(command == "guildloot on")
-            DEFAULT_CHAT_FRAME:AddMessage(TB.COLORED_TITLE .. ": guild loot notifications " .. (command == "guildloot on" and "enabled." or "disabled."))
+        elseif (command == "loot on" or command == "loot off" or command == "guildloot on" or command == "guildloot off") and TB.SetGuildLootEnabled then
+            local enabled = command == "loot on" or command == "guildloot on"
+            TB:SetGuildLootEnabled(enabled)
+            DEFAULT_CHAT_FRAME:AddMessage(TB.COLORED_TITLE .. ": loot notifications " .. (enabled and "enabled." or "disabled."))
         elseif command == "probe" or command == "sync" then
             TB:ProbeAndSync()
             TB:SetStatus("Peer probe and listing sync requested.")

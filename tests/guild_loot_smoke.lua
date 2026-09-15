@@ -8,6 +8,7 @@ Frame.__index = function(self, key)
     local methods = {
         SetScript = function(object, name, callback) object.scripts[name] = callback end,
         SetText = function(object, text) object.text = text end,
+        SetTextColor = function(object, r, g, b) object.textColor = { r, g, b } end,
         SetTexture = function(object, texture) object.texture = texture end,
         Show = function(object) object.shown = true end,
         Hide = function(object) object.shown = false end,
@@ -83,8 +84,96 @@ TB:ClearGuildLoot()
 assert(not TB:CaptureGuildLootMessage("Anyone want anything?", "Frank"), "plain introduction created an empty offer")
 assert(TB:CaptureGuildLootMessage(sphere, "Frank"), "plain introduction did not establish continuation")
 
-TB:ClearGuildLoot()
+-- Offer tags match punctuation and casing, but never words inside item links.
+local tags = { "ANYONE?", "Anybody!", "any1?", "nEeD?", "NEEDS ?", "FREE!", "Giving:", "Giveaway!" }
 local i
+for i = 1, table.getn(tags) do
+    TB:ClearGuildLoot()
+    assert(TB:CaptureLootMessage(tags[i] .. " " .. cloak, "PublicSeller", "World", 4), "public offer tag was missed: " .. tags[i])
+    assert(TB.GuildLoot.active.kind == "GIVE", "public offer tag was classified as a sale")
+end
+TB:ClearGuildLoot()
+assert(not TB:CaptureLootMessage("I crafted " .. link(4, "Free Action Potion"), "Crafter", "World", 4), "linked item name triggered a public giveaway")
+assert(not TB:CaptureLootMessage("freestyle needless " .. cloak, "Crafter", "World", 4), "partial word triggered a public giveaway")
+assert(not TB:CaptureLootMessage("Anyone? " .. cloak, "LocalSeller", "General", 1), "unsupported channel created a popup")
+
+-- Routine public sales remain in Browse; tagged sales retain their selling intent.
+assert(not TB:CaptureLootMessage("WTS " .. cloak, "PublicSeller", "Trade", 2), "ordinary public WTS created a popup")
+assert(not TB:CaptureLootMessage("WTB anyone selling " .. cloak, "Buyer", "World", 4), "public WTB was treated as an offer")
+assert(TB:CaptureLootMessage("wTs - anyone needs? " .. cloak .. " 2g", "PublicSeller", "2. Trade - City", 2), "tagged public sale was missed")
+assert(TB.GuildLoot.active.kind == "SELL" and TB.GuildLoot.active.channel == "Trade", "tagged public sale lost kind or channel")
+
+-- Continuations, duplicate keys, and merged rows stay isolated by source and author.
+TB:ClearGuildLoot()
+assert(TB:CaptureGuildLootMessage("Anyone? " .. cloak, "Frank"))
+assert(not TB:CaptureLootMessage(sphere, "Frank", "World", 4), "World inherited Guild continuation")
+assert(TB:CaptureLootMessage("free " .. cloak, "Frank", "World", 4), "Guild duplicate key suppressed World offer")
+assert(TB:CaptureLootMessage("free " .. cloak, "Frank", "Trade", 2), "World duplicate key suppressed Trade offer")
+assert(not TB:CaptureLootMessage("FREE " .. cloak, "Frank", "World", 4), "same-source duplicate was not suppressed")
+assert(TB:CaptureLootMessage(sphere, "Frank", "World", 4), "World followup failed")
+assert(TB:CaptureGuildLootMessage(ring, "Frank"), "Guild followup failed after public traffic")
+assert(table.getn(TB.GuildLoot.queue) == 2 and table.getn(TB.GuildLoot.active.links) == 2, "sources merged into Guild active popup")
+assert(TB.GuildLoot.queue[1].channel == "World" and table.getn(TB.GuildLoot.queue[1].links) == 2, "World continuation merged into the wrong offer")
+assert(TB.GuildLoot.queue[2].channel == "Trade" and table.getn(TB.GuildLoot.queue[2].links) == 1, "World continuation merged into Trade")
+assert(not TB:CaptureLootMessage("Congrats!", "Frank", "World", 4))
+assert(not TB:CaptureLootMessage(ring, "Frank", "World", 4), "unrelated World chatter retained continuation")
+assert(TB:CaptureGuildLootMessage(sphere, "Frank"), "World chatter ended Guild continuation")
+
+-- A reused popup must repaint author and excerpt, preserving item quality colors.
+ChatTypeInfo = { CHANNEL4 = { r = 0.8, g = 0.6, b = 0.4 }, CHANNEL2 = { r = 0.9, g = 0.5, b = 0.3 }, CHANNEL = { r = 0.7, g = 0.6, b = 0.5 } }
+local function assertPopupColor(r, g, b)
+    local sellerColor, messageColor = frame.seller.textColor, frame.message.textColor
+    assert(sellerColor and sellerColor[1] == r and sellerColor[2] == g and sellerColor[3] == b, "seller retained incorrect channel color")
+    assert(messageColor and messageColor[1] == r and messageColor[2] == g and messageColor[3] == b, "message retained incorrect channel color")
+    assert(frame.rows[1].label.text == cloak, "popup changed item quality link color")
+end
+assertPopupColor(0.25, 1, 0.25)
+TB:DismissGuildLoot()
+assert(frame.title.text == "World loot offers", "World popup was mislabeled")
+assertPopupColor(0.8, 0.6, 0.4)
+TB:DismissGuildLoot()
+assert(frame.title.text == "Trade loot offers", "Trade popup was mislabeled")
+assertPopupColor(0.9, 0.5, 0.3)
+TB:ClearGuildLoot()
+assert(TB:CaptureLootMessage("free " .. cloak, "Fallback", "World"))
+assertPopupColor(0.7, 0.6, 0.5)
+TB:ClearGuildLoot()
+ChatTypeInfo = nil
+assert(TB:CaptureLootMessage("free " .. cloak, "Fallback", "World"))
+assertPopupColor(1, 0.75, 0.75)
+TB:ClearGuildLoot()
+assert(TB:CaptureGuildLootMessage("free " .. cloak, "Frank"))
+assertPopupColor(0.25, 1, 0.25)
+
+-- Exercise actual chat event routing: arg8 is the channel number, not arg7.
+TB:ClearGuildLoot()
+event, arg1, arg2, arg4, arg7, arg8, arg9 = "CHAT_MSG_CHANNEL", "anyone needs ? " .. link(6, "Duskwoven Cape of Frozen Wrath") .. " 45+-", "Daarkynn", "4. World", 26, 4, "World"
+TB.GuildLoot.events.scripts.OnEvent()
+assert(TB.GuildLoot.active and TB.GuildLoot.active.channel == "World" and TB.GuildLoot.active.channelNumber == 4, "screenshot chat event used wrong channel or number")
+TB:ClearGuildLoot()
+arg1, arg2, arg4, arg8, arg9 = "Anybody? " .. cloak, "TradeSeller", "2. Trade - City", 2, nil
+TB.GuildLoot.events.scripts.OnEvent()
+assert(TB.GuildLoot.active and TB.GuildLoot.active.channel == "Trade" and TB.GuildLoot.active.channelNumber == 2, "chat event did not fall back to full channel name")
+TB:ClearGuildLoot()
+arg1, arg2, arg4, arg8, arg9 = "Anyone? " .. cloak, "LocalSeller", "1. General - City", 1, "General"
+TB.GuildLoot.events.scripts.OnEvent()
+assert(not TB.GuildLoot.active, "General event bypassed public channel restrictions")
+arg4, arg8, arg9 = "5. Guild", 5, "Guild"
+TB.GuildLoot.events.scripts.OnEvent()
+assert(not TB.GuildLoot.active, "custom public channel named Guild was treated as guild chat")
+event, arg1, arg2 = "CHAT_MSG_GUILD", "WTS " .. cloak, "GuildSeller"
+TB.GuildLoot.events.scripts.OnEvent()
+assert(TB.GuildLoot.active and TB.GuildLoot.active.channel == "Guild", "guild event lost its original sale behavior")
+event, arg1, arg2, arg4, arg7, arg8, arg9 = nil, nil, nil, nil, nil, nil, nil
+
+-- The existing notification switch applies to public channels too.
+TB:SetGuildLootEnabled(false)
+assert(not TB:CaptureLootMessage("free " .. cloak, "PublicSeller", "World", 4), "disabled notifications captured a public offer")
+assert(not TB.GuildLoot.active and table.getn(TB.GuildLoot.queue) == 0, "disabling notifications retained a popup")
+TB:SetGuildLootEnabled(true)
+assert(TB:CaptureLootMessage("free " .. cloak, "PublicSeller", "World", 4), "public notifications did not re-enable")
+
+TB:ClearGuildLoot()
 for i = 1, 140 do TB:CaptureGuildLootMessage("WTS " .. link(i, "Item " .. i), "Seller" .. i) end
 assert(table.getn(TB.GuildLoot.queue) <= 20, "offer queue is unbounded")
 assert(table.getn(TB.GuildLoot.recent) <= 100, "duplicate cache is unbounded")

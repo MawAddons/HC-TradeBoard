@@ -1,4 +1,4 @@
--- Passive guild offers: these notifications never send chat or peer traffic.
+-- Passive Guild/World/Trade offers; notifications never send chat or peer traffic.
 local TB = TradeBoard
 local FOLLOWUP_SECONDS = 60
 local DISPLAY_SECONDS = 60
@@ -7,6 +7,7 @@ local MAX_QUEUE = 20
 local MAX_ITEMS = 12
 local ROWS = 4
 local QUESTION_TEXTURE = "Interface\\Icons\\INV_Misc_QuestionMark"
+local OFFER_WORDS = { "anyone", "anybody", "any1", "need", "needs", "free", "giving", "giveaway" }
 
 TB.GuildLoot = { queue = {}, contexts = {}, recent = {}, page = 1 }
 
@@ -19,15 +20,30 @@ local function HasWord(text, word)
     return string.find(" " .. text .. " ", "[%s%p]" .. word .. "[%s%p]") ~= nil
 end
 
-local function OfferKind(text)
+local function OfferKind(text, channel)
     if HasWord(text, "wtb") or string.find(text, "want to buy", 1, 1) then return nil end
-    if HasWord(text, "wts") or HasWord(text, "selling") or string.find(text, "for sale", 1, 1) then return "SELL" end
-    if HasWord(text, "free") or HasWord(text, "giving") or HasWord(text, "giveaway")
-        or string.find(text, "anyone need", 1, 1) or string.find(text, "anyone want", 1, 1)
-        or string.find(text, "anybody need", 1, 1) or string.find(text, "anybody want", 1, 1)
-        or string.find(text, "any1 need", 1, 1) or string.find(text, "any1 want", 1, 1)
-        or string.find(text, "give away", 1, 1) then return "GIVE" end
+    local tagged = string.find(text, "give away", 1, 1) ~= nil
+    local i
+    for i = 1, table.getn(OFFER_WORDS) do
+        if HasWord(text, OFFER_WORDS[i]) then tagged = true; break end
+    end
+    local selling = HasWord(text, "wts") or HasWord(text, "selling") or string.find(text, "for sale", 1, 1)
+    -- Public channels use offer tags; routine WTS traffic stays in Browse.
+    if selling and (channel == "Guild" or tagged) then return "SELL" end
+    if tagged then return "GIVE" end
     return nil
+end
+
+function TB:GetLootMessageColor(offer)
+    if offer.channel == "Guild" then return 0.25, 1.00, 0.25 end
+    local number = tonumber(offer.channelNumber)
+    local info
+    if ChatTypeInfo then
+        if number and number > 0 then info = ChatTypeInfo["CHANNEL" .. math.floor(number)] end
+        info = info or ChatTypeInfo.CHANNEL
+    end
+    if info and info.r and info.g and info.b then return info.r, info.g, info.b end
+    return 1.00, 0.75, 0.75
 end
 
 local function PruneRecords(records, now, ttl, limit)
@@ -59,6 +75,15 @@ function TB:ClearGuildLoot()
 end
 
 function TB:CaptureGuildLootMessage(message, sender)
+    return self:CaptureLootMessage(message, sender, "Guild")
+end
+
+function TB:CaptureLootMessage(message, sender, channelName, channelNumber)
+    local channel
+    if string.lower(channelName or "") == "guild" then channel = "Guild"
+    elseif self:IsWorldChannel(channelName) then channel = "World"
+    elseif self:IsTradeChannel(channelName) then channel = "Trade"
+    else return nil end
     if not self:IsGuildLootEnabled() or not message or not sender or sender == "" then return nil end
     if string.lower(sender) == string.lower(UnitName("player") or "") then return nil end
     local state = self.GuildLoot
@@ -67,15 +92,15 @@ function TB:CaptureGuildLootMessage(message, sender)
     state.contexts = PruneRecords(state.contexts, now, FOLLOWUP_SECONDS, 31)
     state.recent = PruneRecords(state.recent, now, DEDUP_SECONDS, 99)
     local plain = PlainOfferText(message)
-    local kind = OfferKind(plain)
+    local kind = OfferKind(plain, channel)
     local links = self:ExtractWorldItemLinks(message)
     local context, i
     for i = 1, table.getn(state.contexts) do
-        if state.contexts[i].author == author then context = state.contexts[i]; break end
+        if state.contexts[i].author == author and state.contexts[i].channel == channel then context = state.contexts[i]; break end
     end
     if kind then
         if not context then
-            context = { author = author }
+            context = { author = author, channel = channel }
             table.insert(state.contexts, context)
         end
         context.kind = kind
@@ -91,7 +116,7 @@ function TB:CaptureGuildLootMessage(message, sender)
     if table.getn(links) == 0 then return nil end
     local uniqueLinks = {}
     for i = 1, math.min(table.getn(links), MAX_ITEMS) do
-        local key = author .. ":" .. kind .. ":" .. (self:ExtractItemKey(links[i]) or links[i])
+        local key = channel .. ":" .. author .. ":" .. kind .. ":" .. (self:ExtractItemKey(links[i]) or links[i])
         local duplicate = nil
         local j
         for j = 1, table.getn(state.recent) do
@@ -105,15 +130,20 @@ function TB:CaptureGuildLootMessage(message, sender)
     while table.getn(state.recent) > 100 do table.remove(state.recent, 1) end
     if table.getn(uniqueLinks) == 0 then return nil end
     local offer
-    if state.active and state.active.author == author and state.active.kind == kind then offer = state.active end
+    if state.active and state.active.author == author and state.active.kind == kind and state.active.channel == channel then offer = state.active end
     if not offer then
         for i = 1, table.getn(state.queue) do
-            if state.queue[i].author == author and state.queue[i].kind == kind then offer = state.queue[i]; break end
+            if state.queue[i].author == author and state.queue[i].kind == kind and state.queue[i].channel == channel then offer = state.queue[i]; break end
         end
     end
     if offer and table.getn(offer.links) + table.getn(uniqueLinks) > MAX_ITEMS then offer = nil end
     if not offer then
-        offer = { author = author, sender = sender, kind = kind, links = {}, at = now, message = message }
+        if not tonumber(channelNumber) then
+            local _, _, prefix = string.find(channelName or "", "^(%d+)%.")
+            channelNumber = tonumber(prefix)
+        end
+        offer = { author = author, sender = sender, kind = kind, links = {}, at = now, message = message,
+            channel = channel, channelNumber = tonumber(channelNumber) }
         table.insert(state.queue, offer)
         while table.getn(state.queue) > MAX_QUEUE do table.remove(state.queue, 1) end
     end
@@ -244,10 +274,16 @@ function TB:ShowGuildLootPopup()
     local count = table.getn(offer.links)
     local pages = math.max(1, math.ceil(count / ROWS))
     state.page = math.min(state.page, pages)
-    local verb = offer.kind == "SELL" and " is selling to guildmates" or " is offering loot to guildmates"
-    frame.seller:SetText(offer.sender .. verb)
+    frame.title:SetText((offer.channel or "Guild") .. " loot offers")
+    local verb = offer.kind == "SELL" and " is selling" or " is offering loot"
+    frame.seller:SetText(offer.sender .. verb .. (offer.channel == "Guild" and " to guildmates" or ""))
+    local r, g, b = self:GetLootMessageColor(offer)
+    frame.seller:SetTextColor(r, g, b)
+    frame.message:SetTextColor(r, g, b)
     -- Item rows carry the links; the small chat excerpt retains prices/conditions.
     local excerpt = string.gsub(offer.message or "", "|c%x+|Hitem:[^|]+|h(%[[^]]+%])|h|r", "%1")
+    excerpt = string.gsub(excerpt, "|c%x%x%x%x%x%x%x%x", "")
+    excerpt = string.gsub(excerpt, "|r", "")
     frame.message:SetText(excerpt)
     local i
     for i = 1, ROWS do
@@ -275,9 +311,16 @@ function TB:DismissGuildLoot()
 end
 
 local events = CreateFrame("Frame")
+TB.GuildLoot.events = events
 events:RegisterEvent("CHAT_MSG_GUILD")
+events:RegisterEvent("CHAT_MSG_CHANNEL")
 events:RegisterEvent("PLAYER_GUILD_UPDATE")
 events:SetScript("OnEvent", function()
     if event == "CHAT_MSG_GUILD" then TB:CaptureGuildLootMessage(arg1, arg2)
+    elseif event == "CHAT_MSG_CHANNEL" then
+        local channel = arg9 and arg9 ~= "" and arg9 or arg4
+        if TB:IsWorldChannel(channel) or TB:IsTradeChannel(channel) then
+            TB:CaptureLootMessage(arg1, arg2, channel, arg8)
+        end
     elseif event == "PLAYER_GUILD_UPDATE" and (not arg1 or arg1 == "player") then TB:ClearGuildLoot() end
 end)

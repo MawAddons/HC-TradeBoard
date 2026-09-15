@@ -1,4 +1,4 @@
-# HC TradeBoard 0.7.3
+# HC TradeBoard 0.7.4
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -33,14 +33,15 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - In **Professions**, use **List / Edit Mine** to publish services learned by the current character, including skill rank and an optional short note.
 - The Professions tab includes the three guilds with the most distinct providers. Click a guild sigil to filter the service table; click it again to clear the filter.
 - Press Enter to open normal chat, then Shift-left-click a listed item to insert its real item link.
-- Guild item offers automatically open a compact loot window. Click an item to inspect it, or **Whisper** to draft a reply. `/tb guildloot off` disables notifications; `/tb guildloot on` enables them again.
+- Guild item offers and tagged offers in World/Trade automatically open a compact loot window. Click an item to inspect it, or **Whisper** to draft a reply. `/tb loot off` disables notifications; `/tb loot on` enables them again. The older `/tb guildloot` commands remain aliases for the same setting.
 
 ## Features
 
 - Browse, My Listings, Trade Chains, Professions, and World Trade tabs.
 - A searchable World and Trade-channel archive retaining up to twelve hours and the newest 500 case-insensitive WTS, WTB, and LFW posts. It is shared with peers using duplicate suppression and includes inline hoverable/clickable item links. Idea credit: Svenne :)
 - No automatic `/who` calls. Sellers with unknown levels have a `?` button for a player-initiated visible Who lookup. All lookup buttons share a 30-second countdown; buttons disappear once the level is known. Matching level, class, and guild data is shared across tabs and peers.
-- Guild give/sell offers with item links open a dismissible, draggable loot popup. Item-only followups from that guildmate within 60 seconds join the offer. Queues and duplicate detection are bounded, and the feature sends no additional chat or peer traffic.
+- Loot popups recognize whole words `anyone`, `anybody`, `any1`, `need`, `needs`, `free`, `giving`, and `giveaway`, plus `give away`, case-insensitively in Guild, World and Trade. Item names do not count as trigger words. An item link is required to open a popup. Guild WTS offers also trigger; public WTS-only posts continue to Browse. WTB requests are excluded.
+- Loot popups label the source channel. Guild sender/message text is green; World/Trade text follows the channel's normal configured chat color. Item links retain their quality colors. Item-only followups within 60 seconds join the same sender's offer in the same channel. Contexts, grouping and duplicate detection are separated by channel, with bounded queues and no additional chat or peer traffic.
 - Item-linked WTS/WTB chat messages appear as **Chat** offers in Browse. WTS item offers expire three hours after the original message, including those received from peers. WTB offers and recognized **Chat** services in Professions retain their twelve-hour lifetime. The World/Trade archive also remains twelve hours; rebuilding it never restores expired WTS offers.
 - Browse displays at most one row per item name + character name, ignoring case, color codes and extra whitespace. Published listings take priority over chat offers; otherwise the newest original post supplies price, quantity and expiry, without adding quantities together. Filtering and counts use unique visible offers. Original records remain available for My Listings, withdrawals and the World/Trade archive.
 - A classic minimap coin button for opening and closing HC TradeBoard.
@@ -71,7 +72,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 ## Current limitations
 
 - Every player who wants to see or publish listings needs HC TradeBoard installed and must be able to join the same custom channel. Whether Horde and Alliance share that custom channel depends on the server implementation.
-- Guild loot popups are shown only to guildmates running the addon and receiving the original guild chat. Offers are inferred from wording such as WTS, selling, free, or "Anyone need anything?"; unrelated item mentions are ignored.
+- Loot popups are local to clients running the addon and receiving the original Guild/World/Trade message. They infer offers from trigger words and cannot reliably distinguish all questions from giveaways; `anyone?` and `needs?` intentionally count. The word `free` inside an item link such as `[Free Action Potion]` does not trigger them.
 - Stock 1.12 exposes required level but not actual item level in `GetItemInfo`; unavailable iLvl is shown as `-`. Uncached item categories become filterable when the client provides their metadata.
 - The 30-second Who timer tracks lookups initiated by TradeBoard buttons; independent `/who` commands and server-specific throttles may impose an additional wait.
 - Listings are an advertisement only. HC TradeBoard does not move items, money, or automate trades.
