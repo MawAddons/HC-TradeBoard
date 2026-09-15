@@ -370,6 +370,20 @@ function TB:Close()
     frame:Hide()
 end
 
+function TB:RefreshMemoryLabel()
+    if not self.Frames.memoryLabel or not self.Frames.main:IsShown() then return end
+    local sample = self:SampleMemoryUsage()
+    if self.displayedMemorySample == sample then return end
+    self.displayedMemorySample = sample
+    if sample.scope == "addon" then
+        self.Frames.memoryLabel:SetText(string.format("Addon: %.2f MB", sample.mb))
+    elseif sample.scope == "lua" then
+        self.Frames.memoryLabel:SetText(string.format("Lua total: %.2f MB", sample.mb))
+    else
+        self.Frames.memoryLabel:SetText("Memory: unavailable")
+    end
+end
+
 function TB:CreateMainFrame()
     local frame = CreateFrame("Frame", "TradeBoardFrame", UIParent)
     frame:SetWidth(1180)
@@ -415,6 +429,36 @@ function TB:CreateMainFrame()
 
     local version = CreateText(header, "v" .. self.VERSION, "GameFontDisableSmall", 0.55, 0.50, 0.40)
     version:SetPoint("LEFT", header, "LEFT", 8, 0)
+
+    local memory = CreateFrame("Frame", nil, header)
+    memory:SetWidth(190); memory:SetHeight(24)
+    memory:SetPoint("LEFT", header, "LEFT", 90, 0)
+    memory:SetFrameLevel(header:GetFrameLevel() + 1)
+    memory:EnableMouse(1)
+    local memoryLabel = CreateText(memory, "Memory: --", "GameFontHighlightSmall", 0.65, 0.70, 0.62)
+    memoryLabel:SetPoint("LEFT", memory, "LEFT", 0, 0)
+    self.Frames.memoryLabel = memoryLabel
+    self.Frames.memoryUsage = memory
+    memory:SetScript("OnEnter", function()
+        TB:RefreshMemoryLabel()
+        local sample = TB.memorySample
+        GameTooltip:SetOwner(this, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("HC TradeBoard memory", 1.00, 0.82, 0.24)
+        if sample and sample.scope == "addon" then
+            GameTooltip:AddLine("Memory attributed to HC TradeBoard by this client.", 0.90, 0.86, 0.76)
+        elseif sample and sample.scope == "lua" then
+            GameTooltip:AddLine("This client cannot report memory per addon.", 0.90, 0.86, 0.76)
+            GameTooltip:AddLine("Lua total includes Blizzard UI and all addons.", 0.90, 0.86, 0.76)
+        else
+            GameTooltip:AddLine("This client does not expose memory usage.", 0.90, 0.86, 0.76)
+        end
+        if sample then
+            GameTooltip:AddLine("Sampled " .. math.max(0, math.floor(GetTime() - sample.sampledAt)) .. "s ago.", 0.70, 0.70, 0.65)
+        end
+        GameTooltip:AddLine("Updates every 30s while TradeBoard is open.", 0.70, 0.70, 0.65)
+        GameTooltip:Show()
+    end)
+    memory:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Keep the emergency close control outside the draggable header so even a
     -- small mouse movement cannot turn the click into a header drag.
@@ -2830,6 +2874,7 @@ function TB:Initialize()
     local events = CreateFrame("Frame", nil, UIParent)
     -- Update only small button labels, once per second while the board is visible.
     self.Frames.main:SetScript("OnUpdate", function()
+        TB:RefreshMemoryLabel()
         local remaining = TB:GetWhoCooldownRemaining()
         if remaining ~= TB.displayedWhoCooldown then
             TB.displayedWhoCooldown = remaining

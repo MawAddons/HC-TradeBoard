@@ -320,6 +320,44 @@ assert(table.getn(TB.SendQueue or {}) == queuedBeforeGuild, "guild popup created
 click(guildPopup.dismiss)
 assert(not guildPopup:IsShown() and not TB.GuildLoot.active, "guild popup did not dismiss")
 
+-- Memory labels distinguish addon measurements from the shared Vanilla heap,
+-- and sampling must stay throttled even when the window is reopened.
+local memoryUpdates, totalReads = 0, 0
+function UpdateAddOnMemoryUsage() memoryUpdates = memoryUpdates + 1 end
+function GetAddOnMemoryUsage(name)
+    assert(name == "HC-Tradeboard", "memory lookup targeted a different addon")
+    return 2560
+end
+function gcinfo() totalReads = totalReads + 1; return 20480, 40960 end
+TB.memorySample = nil; TB.nextMemorySampleAt = nil
+TB.Frames.main:Hide()
+fire(TB.Frames.main, "OnUpdate")
+assert(memoryUpdates == 0 and totalReads == 0, "closed board sampled memory")
+TB.Frames.main:Show()
+fire(TB.Frames.main, "OnUpdate")
+assert(TB.Frames.memoryLabel:GetText() == "Addon: 2.50 MB" and totalReads == 0, "addon KB were not converted to MB or scope was wrong")
+for i = 1, 20 do fire(TB.Frames.main, "OnUpdate") end
+TB.Frames.main:Hide(); TB.Frames.main:Show()
+fire(TB.Frames.main, "OnUpdate")
+assert(memoryUpdates == 1, "frame updates or reopening bypassed memory sampling throttle")
+function GetAddOnMemoryUsage() error("unsupported profiler") end
+now = now + 30
+fire(TB.Frames.main, "OnUpdate")
+assert(TB.Frames.memoryLabel:GetText() == "Lua total: 20.00 MB" and totalReads == 1, "failed client profiler did not fall back to clearly labelled total Lua memory")
+UpdateAddOnMemoryUsage = nil; GetAddOnMemoryUsage = nil
+now = now + 30
+fire(TB.Frames.main, "OnUpdate")
+assert(TB.memorySample.scope == "lua" and totalReads == 2, "stock Vanilla gcinfo memory read failed")
+fire(TB.Frames.memoryUsage, "OnEnter")
+assert(GameTooltip:IsShown() and GameTooltip:GetText() == "HC TradeBoard memory", "memory label did not show its explanation tooltip")
+fire(TB.Frames.memoryUsage, "OnLeave")
+assert(not GameTooltip:IsShown(), "memory tooltip did not close")
+gcinfo = nil
+now = now + 30
+fire(TB.Frames.main, "OnUpdate")
+assert(TB.Frames.memoryLabel:GetText() == "Memory: unavailable", "missing memory APIs displayed a fabricated value")
+TB.Frames.main:Hide()
+
 if arg and arg[1] == "--preview" then
     local function xml(value)
         local result = plainText(value)
@@ -356,4 +394,4 @@ if arg and arg[1] == "--preview" then
     print("FILTER_PREVIEW_END")
 end
 
-print("HC TradeBoard UI smoke test passed: dropdowns, filter geometry, Mail category, shared Who cooldown, identity and guild loot popup")
+print("HC TradeBoard UI smoke test passed: dropdowns, filter geometry, Mail category, shared Who cooldown, identity, guild loot popup and memory label")

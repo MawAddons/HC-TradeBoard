@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.7.2"
+TradeBoard.VERSION = "0.7.3"
 TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
 TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffa335eeTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 10
@@ -17,6 +17,7 @@ TradeBoard.WORLD_LOG_TTL = 43200
 TradeBoard.CHAT_WTS_TTL = 10800
 TradeBoard.MAX_PROFESSION_ROWS = 10
 TradeBoard.WHO_COOLDOWN = 30
+TradeBoard.MEMORY_SAMPLE_INTERVAL = 30
 
 TradeBoard.Listings = {}
 TradeBoard.ListingIndex = {}
@@ -691,6 +692,30 @@ function TradeBoard:ResetFilters()
     for quality = 1, 5 do
         state.rarities[quality] = 1
     end
+end
+
+function TradeBoard:SampleMemoryUsage()
+    local now = GetTime()
+    if self.memorySample and now < (self.nextMemorySampleAt or 0) then return self.memorySample end
+    self.nextMemorySampleAt = now + self.MEMORY_SAMPLE_INTERVAL
+    local sample = { sampledAt = now, scope = "unavailable" }
+    -- Per-addon profiling is supplied by newer/extended clients. Never label
+    -- the shared Lua heap as TradeBoard's own memory on stock Vanilla.
+    if type(UpdateAddOnMemoryUsage) == "function" and type(GetAddOnMemoryUsage) == "function" then
+        local updated = pcall(UpdateAddOnMemoryUsage)
+        if updated then
+            local ok, value = pcall(GetAddOnMemoryUsage, "HC-Tradeboard")
+            local kilobytes = ok and tonumber(value)
+            if kilobytes and kilobytes >= 0 then sample.scope = "addon"; sample.mb = kilobytes / 1024 end
+        end
+    end
+    if not sample.mb and type(gcinfo) == "function" then
+        local ok, value = pcall(gcinfo)
+        local kilobytes = ok and tonumber(value)
+        if kilobytes and kilobytes >= 0 then sample.scope = "lua"; sample.mb = kilobytes / 1024 end
+    end
+    self.memorySample = sample
+    return sample
 end
 
 function TradeBoard:SetStatus(text)

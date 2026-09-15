@@ -1,4 +1,4 @@
-# HC TradeBoard 0.7.2
+# HC TradeBoard 0.7.3
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -63,6 +63,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - Browse and Professions tables include Guild columns.
 - The custom protocol channel is removed from the visible chat windows after joining.
 - Visible network state and peer count in the HC TradeBoard status bar.
+- A compact header label shows memory usage in MB. It samples at most every 30 seconds while the board is visible, with no forced garbage collection or background polling while closed. Hover for measurement scope and age. Clients with per-addon memory APIs show **Addon**; otherwise **Lua total** clearly identifies the shared Lua heap (Blizzard UI and all addons).
 - Select a listing to open a whisper to its trader or request to add that trader to the friend list.
 - The minimap-button position is saved between sessions.
 - Combat-safe direct closing through Esc, the top-level X button, `/tb`, or the minimap coin.
