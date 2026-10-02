@@ -1,9 +1,12 @@
 local TB = TradeBoard
 
 local QUESTION_TEXTURE = "Interface\\Icons\\INV_Misc_QuestionMark"
-local SEND_DELAY = 2.0
-local WORLD_SEND_DELAY = 8.0
+-- The 1.12 custom channel is the only peer transport available across guilds.
+-- Keep it deliberately slow so ordinary player chat always wins the throttle.
+local SEND_DELAY = 5.0
+local WORLD_SEND_DELAY = 20.0
 local MAX_SEND_QUEUE = 80
+local MAX_SENDS_PER_MINUTE = 8
 
 local function LowerName(name)
     return string.lower(name or "")
@@ -1164,6 +1167,25 @@ function TB:QueueChainAnnouncement(chain, delay)
     self:QueueMessage(self:BuildChainMessage(chain), delay or 0, "chain")
 end
 
+function TB:BuildChainOrderMessage(order)
+    return self.PROTOCOL .. "~O~" .. self:EscapeProtocol(order.id) .. "~" .. self:EscapeProtocol(order.chainOwner) .. "~" ..
+        self:EscapeProtocol(order.customer) .. "~" .. self:EscapeProtocol(order.item) .. "~" .. tostring(order.quantity or 1) .. "~" ..
+        self:EscapeProtocol(order.fromName) .. "~" .. self:EscapeProtocol(order.toName) .. "~" .. self:EscapeProtocol(order.note) .. "~" ..
+        self:EscapeProtocol(order.status) .. "~" .. tostring(order.updatedAt or self:GetWallTime()) .. "~" .. self:EscapeProtocol(order.updatedBy)
+end
+
+function TB:QueueChainOrderAnnouncement(order, delay)
+    local message = self:BuildChainOrderMessage(order)
+    if string.len(message) <= 250 then self:QueueMessage(message, delay or 0, "order:" .. order.id) end
+end
+
+function TB:QueueVolunteerAnnouncement(volunteer, delay)
+    local message = self.PROTOCOL .. "~V~" .. self:EscapeProtocol(volunteer.name) .. "~" .. tostring(volunteer.level or 0) .. "~" ..
+        tostring(volunteer.low or 0) .. "~" .. tostring(volunteer.high or 0) .. "~" .. (volunteer.enabled and "1" or "0") .. "~" ..
+        tostring(volunteer.updatedAt or self:GetWallTime())
+    self:QueueMessage(message, delay or 0, "volunteer:" .. LowerName(volunteer.name))
+end
+
 function TB:QueueMessage(message, delay, queueKey)
     if not self.SendQueue then
         self.SendQueue = {}
@@ -1228,7 +1250,7 @@ end
 
 function TB:QueueSharedSnapshots(baseDelay)
     local delay = baseDelay or 8
-    local first = table.getn(self.WorldLog or {}) - 11
+    local first = table.getn(self.WorldLog or {}) - 3
     if first < 1 then first = 1 end
     local i
     for i = first, table.getn(self.WorldLog or {}) do
@@ -1242,7 +1264,7 @@ function TB:QueueSharedSnapshots(baseDelay)
     end
     table.sort(identities, function(a, b) return (a.person.seenAt or 0) > (b.person.seenAt or 0) end)
     local limit = table.getn(identities)
-    if limit > 8 then limit = 8 end
+    if limit > 2 then limit = 2 end
     for i = 1, limit do
         person = identities[i].person
         self:QueueIdentityAnnouncement(person.name or identities[i].name, person.level, person.class, person.guild, person.seenAt, delay + (math.random() * 8))
@@ -1270,6 +1292,46 @@ function TB:HandleWorldMessage(fields, peerSender)
     self:PruneWorldLog()
     self:RememberWorldPerson(entry.sender, entry.guild, entry.level, entry.class, entry.timestamp)
     self:ImportWorldEntry(entry)
+    if self.CheckWantedEntry then self:CheckWantedEntry(entry) end
+end
+
+function TB:HandleChainOrderMessage(fields, peerSender)
+    if not self.UpsertChainOrder then return end
+    local order = { id = self:UnescapeProtocol(fields[3] or ""), chainOwner = self:UnescapeProtocol(fields[4] or ""),
+        customer = self:UnescapeProtocol(fields[5] or ""), item = self:UnescapeProtocol(fields[6] or ""), quantity = tonumber(fields[7]) or 1,
+        fromName = self:UnescapeProtocol(fields[8] or ""), toName = self:UnescapeProtocol(fields[9] or ""), note = self:UnescapeProtocol(fields[10] or ""),
+        status = self:UnescapeProtocol(fields[11] or "REQUESTED"), updatedAt = tonumber(fields[12]) or 0,
+        updatedBy = self:UnescapeProtocol(fields[13] or "") }
+    if order.id == "" or order.item == "" or LowerName(order.updatedBy) ~= LowerName(peerSender) or order.updatedAt < self:GetWallTime() - self.CHAIN_ORDER_TTL then return end
+    if order.status ~= "REQUESTED" and order.status ~= "PICKED UP" and order.status ~= "DELIVERED" then return end
+    order.quantity = math.max(1, math.min(9999, order.quantity))
+    local existing, i
+    for i = 1, table.getn(self.ChainOrders or {}) do if self.ChainOrders[i].id == order.id then existing = self.ChainOrders[i]; break end end
+    if not existing then
+        if LowerName(order.customer) ~= LowerName(peerSender) then return end
+    else
+        local sender = LowerName(peerSender)
+        if sender ~= LowerName(existing.customer) and sender ~= LowerName(existing.chainOwner) and sender ~= LowerName(existing.fromName) and sender ~= LowerName(existing.toName) then return end
+        -- Status participants cannot rewrite the original request or route.
+        order.chainOwner = existing.chainOwner; order.customer = existing.customer; order.item = existing.item
+        order.quantity = existing.quantity; order.fromName = existing.fromName; order.toName = existing.toName
+    end
+    self:CancelQueuedKey("order:" .. order.id)
+    self:UpsertChainOrder(order)
+end
+
+function TB:HandleVolunteerMessage(fields, peerSender)
+    if not self.InitializeFeatureData then return end
+    self:InitializeFeatureData()
+    local name = self:UnescapeProtocol(fields[3] or "")
+    local updatedAt = tonumber(fields[8]) or 0
+    if name == "" or LowerName(name) ~= LowerName(peerSender) or updatedAt < self:GetWallTime() - self.CHAIN_ORDER_TTL then return end
+    local existing = self.ChainVolunteers[LowerName(name)]
+    if not existing or updatedAt >= (tonumber(existing.updatedAt) or 0) then
+        local level = tonumber(fields[4]) or 0
+        self.ChainVolunteers[LowerName(name)] = { name = name, level = level, low = math.max(1, level - 5),
+            high = math.min(60, level + 5), enabled = fields[7] == "1" and 1 or nil, updatedAt = updatedAt }
+    end
 end
 
 function TB:HandleIdentityMessage(fields)
@@ -1377,6 +1439,12 @@ function TB:SendQueuedMessage()
     if self.Network.lastSend and now - self.Network.lastSend < SEND_DELAY then
         return
     end
+    self.Network.sendTimes = self.Network.sendTimes or {}
+    local historyIndex
+    for historyIndex = table.getn(self.Network.sendTimes), 1, -1 do
+        if now - self.Network.sendTimes[historyIndex] >= 60 then table.remove(self.Network.sendTimes, historyIndex) end
+    end
+    if table.getn(self.Network.sendTimes) >= MAX_SENDS_PER_MINUTE then return end
     local chosen = nil
     local chosenDue = nil
     local i
@@ -1392,6 +1460,7 @@ function TB:SendQueuedMessage()
         table.remove(self.SendQueue, chosen)
         SendChatMessage(queued.message, "CHANNEL", nil, channelID)
         self.Network.lastSend = now
+        table.insert(self.Network.sendTimes, now)
     end
 end
 
@@ -1418,6 +1487,20 @@ function TB:QueueOwnData(baseDelay)
     for i = 1, table.getn(self.MyServices) do
         self:QueueServiceAnnouncement(self.MyServices[i], delay)
         delay = delay + SEND_DELAY
+    end
+    if self.GetOwnVolunteer then
+        local volunteer = self:GetOwnVolunteer()
+        if volunteer then self:QueueVolunteerAnnouncement(volunteer, delay); delay = delay + SEND_DELAY end
+    end
+    if self.ChainOrders then
+        local sentOrders = 0
+        for i = table.getn(self.ChainOrders), 1, -1 do
+            if sentOrders < 5 and LowerName(self.ChainOrders[i].updatedBy) == LowerName(UnitName("player")) then
+                self:QueueChainOrderAnnouncement(self.ChainOrders[i], delay)
+                delay = delay + SEND_DELAY
+                sentOrders = sentOrders + 1
+            end
+        end
     end
 end
 
@@ -1522,10 +1605,11 @@ function TB:HandleProtocolMessage(message, sender)
         self:MarkPeer(sender, fields[5], fields[6], self:UnescapeProtocol(fields[7] or ""))
     elseif operation == "Q" then
         local now = GetTime()
-        if table.getn(self.MyListings) > 0 or table.getn(self.MyServices) > 0 or (TradeBoardDB and TradeBoardDB.myChain) or table.getn(self.WorldLog or {}) > 0 then
+        if table.getn(self.MyListings) > 0 or table.getn(self.MyServices) > 0 or (TradeBoardDB and TradeBoardDB.myChain) or
+            table.getn(self.WorldLog or {}) > 0 or table.getn(self.ChainOrders or {}) > 0 or (self.GetOwnVolunteer and self:GetOwnVolunteer()) then
             self.Network.queryReplyAt = self.Network.queryReplyAt or {}
             local requester = LowerName(sender)
-            if not self.Network.queryReplyAt[requester] or now - self.Network.queryReplyAt[requester] > 120 then
+            if not self.Network.queryReplyAt[requester] or now - self.Network.queryReplyAt[requester] > 600 then
                 self.Network.queryReplyAt[requester] = now
                 local delay = 5 + (math.random() * 20)
                 self:QueueOwnData(delay)
@@ -1583,6 +1667,14 @@ function TB:HandleProtocolMessage(message, sender)
         if self.UpdateWorldLog then self:UpdateWorldLog() end
         if self.UpdateBrowse then self:UpdateBrowse() end
         if self.UpdateProfessions then self:UpdateProfessions() end
+    elseif operation == "O" then
+        self:HandleChainOrderMessage(fields, sender)
+        self:MarkPeer(sender)
+        if self.UpdateDeliveryDesk then self:UpdateDeliveryDesk() end
+    elseif operation == "V" then
+        self:HandleVolunteerMessage(fields, sender)
+        self:MarkPeer(sender)
+        if self.UpdateDeliveryDesk then self:UpdateDeliveryDesk() end
     end
 end
 
@@ -1719,6 +1811,7 @@ function TB:NetworkOnEvent(eventName, one, two, three, four, five, six, seven, e
         self:LoadSavedServices()
         self:LoadRemoteCache()
         self:InitializeWorldLog()
+        if self.InitializeFeatureData then self:InitializeFeatureData() end
         if self.UpdateMyListings then
             self:UpdateMyListings()
         end
@@ -1739,14 +1832,14 @@ function TB:NetworkOnEvent(eventName, one, two, three, four, five, six, seven, e
         self:JoinNetworkChannel()
     elseif eventName == "CHAT_MSG_CHANNEL" then
         if LowerName(two) == LowerName(UnitName("player")) and nine and string.upper(nine) ~= string.upper(self.CHANNEL_NAME) then
-            self.Network.userChatQuietUntil = GetTime() + 5
+            self.Network.userChatQuietUntil = GetTime() + 15
         end
         self:CaptureWorldMessage(one, two, nine)
         if not nine or nine == "" or string.upper(nine) == string.upper(self.CHANNEL_NAME) then
             self:HandleProtocolMessage(one, two)
         end
     elseif eventName == "CHAT_MSG_SAY" or eventName == "CHAT_MSG_YELL" or eventName == "CHAT_MSG_GUILD" or eventName == "CHAT_MSG_PARTY" or eventName == "CHAT_MSG_RAID" or eventName == "CHAT_MSG_WHISPER_INFORM" then
-        if LowerName(two) == LowerName(UnitName("player")) or eventName == "CHAT_MSG_WHISPER_INFORM" then self.Network.userChatQuietUntil = GetTime() + 5 end
+        if LowerName(two) == LowerName(UnitName("player")) or eventName == "CHAT_MSG_WHISPER_INFORM" then self.Network.userChatQuietUntil = GetTime() + 15 end
     elseif eventName == "WHO_LIST_UPDATE" then
         if self.PendingManualWhoName and GetNumWhoResults and GetWhoInfo then
             local i

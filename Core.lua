@@ -1,6 +1,6 @@
 TradeBoard = {}
 
-TradeBoard.VERSION = "0.7.5"
+TradeBoard.VERSION = "0.8.0"
 TradeBoard.DISPLAY_TITLE = "HC TradeBoard"
 TradeBoard.COLORED_TITLE = "|cffb8c0ccHC|r |cffa335eeTradeBoard|r"
 TradeBoard.MAX_VISIBLE_ROWS = 10
@@ -102,6 +102,7 @@ TradeBoard.State = {
     myListingOffset = 0,
     selectedChain = nil,
     chainOffset = 0,
+    chainOrderOffset = 0,
     selectedMyListing = nil,
     profession = "All Services",
     professionOffset = 0,
@@ -113,6 +114,7 @@ TradeBoard.State = {
     worldSearch = "",
     worldType = "ALL",
     worldChannel = "ALL",
+    wantedOffset = 0,
     professionSearch = "",
     professionSource = "ALL",
     professionOnlineOnly = nil,
@@ -364,6 +366,7 @@ function TradeBoard:CaptureWorldMessage(message, sender, channelName)
     table.insert(self.WorldLog, entry)
     self:PruneWorldLog()
     if self.ImportWorldEntry then self:ImportWorldEntry(entry) end
+    if self.CheckWantedEntry then self:CheckWantedEntry(entry) end
     if self.QueueWorldAnnouncement then self:QueueWorldAnnouncement(entry, 4 + (math.random() * 14)) end
     if self.UpdateWorldLog then self:UpdateWorldLog() end
 end

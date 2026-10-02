@@ -108,6 +108,6 @@ TB:QueueMessage("newest", 20, "same-record")
 assert(table.getn(TB.SendQueue) == 1 and TB.SendQueue[1].message == "newest" and TB.SendQueue[1].due == firstDue, "network queue did not coalesce duplicate records")
 TB.Network = { peers = {}, state = "OFFLINE" }
 TB:NetworkOnEvent("CHAT_MSG_WHISPER_INFORM", "hello", "Friend")
-assert(TB.Network.userChatQuietUntil == GetTime() + 5, "background traffic did not pause for player chat")
+assert(TB.Network.userChatQuietUntil == GetTime() + 15, "background traffic did not use the conservative pause after player chat")
 
 print("HC TradeBoard World log smoke test passed")

@@ -47,6 +47,7 @@ function methods:Disable() self.enabled = false end
 function methods:EnableMouse(value) self.mouseEnabled = value end
 function methods:EnableKeyboard(value) self.keyboardEnabled = value end
 function methods:SetAlpha(value) self.alpha = value end
+function methods:SetClampedToScreen(value) self.clampedToScreen = value end
 function methods:SetPoint(point, relative, relativePoint, x, y)
     assert(type(point) == "string" and type(relative) == "table" and type(relativePoint) == "string", "invalid legacy SetPoint signature")
     assert(type(x) == "number" and type(y) == "number", "SetPoint coordinates must be numeric")
@@ -123,6 +124,7 @@ function SendWho(query) table.insert(whoQueries, query) end
 
 dofile("HC-Tradeboard/Core.lua")
 dofile("HC-Tradeboard/Network.lua")
+dofile("HC-Tradeboard/Features.lua")
 dofile("HC-Tradeboard/UI.lua")
 dofile("HC-Tradeboard/GuildLoot.lua")
 
@@ -133,6 +135,15 @@ assert(table.getn(TB.Frames.myListingRows) == 9, "My Listings did not create nin
 assert(table.getn(TB.Frames.professionRows) == 10, "Professions did not create ten rows")
 assert(table.getn(TB.Frames.worldLogRows) == 10, "World Trade did not create ten rows")
 assert(TB.Frames.browseScrollbar and TB.Frames.worldScrollbar and TB.Frames.professionScrollbar, "classic scrollbars were not created")
+assert(TB.Frames.tabs.Wanted and TB.Frames.settingsButton and TB.Frames.minimizeButton, "Wanted/settings/minimize controls were not created")
+assert(not TB.Frames.main.clampedToScreen, "main window is still clamped and cannot be parked out of frame")
+
+-- Compact mode must leave a draggable title bar and restore the full layout.
+TB.Frames.main:Show()
+TB:SetMinimized(1)
+assert(TB.Frames.main:GetWidth() == 420 and TB.Frames.main:GetHeight() == 64 and not TB.Frames.content:IsShown(), "minimize did not collapse to its title bar")
+TB:SetMinimized(nil)
+assert(TB.Frames.main:GetWidth() == 1180 and TB.Frames.main:GetHeight() == 720 and TB.Frames.content:IsShown(), "restore did not return the approved full layout")
 
 local function click(button)
     assert(button:IsShown() and button.enabled, "cannot click hidden or disabled button")
@@ -302,6 +313,40 @@ TB:UpdateBrowse(); TB:UpdateWorldLog(); TB:UpdateProfessions(); TB:RefreshWhoBut
 assert(not unknownBrowse.whoButton:IsShown() and not unknownWorld.whoButton:IsShown() and not unknownProfession.whoButton:IsShown(), "resolved Who information did not hide buttons across tabs")
 assert(unknownRing.whoButton:IsShown() and unknownRing.whoButton.label:GetText() == "30" and not unknownRing.whoButton.enabled, "another seller lost the shared cooldown when a Who response arrived")
 assert(findRow(TB.Frames.resultRows, "listing", function(value) return value.id == "mail" end).listing.traderLevel == 42, "Who identity update removed or failed to enrich Browse listing")
+
+-- Settings, subscriptions and delivery tracking are account-wide and peer-safe.
+TB:InitializeFeatureData()
+click(TB.Frames.settingsButton)
+assert(TB.Frames.settingsPanel:IsShown(), "gear button did not open settings")
+TB:SetLootMute("Guild", 300)
+TB:SetLootMute("Public", 600)
+assert(TB:GetLootMuteLabel("Guild") == "Muted 5m" and TB:GetLootMuteLabel("World") == "Muted 10m", "source-specific popup timers were not stored")
+TB:SetLootMute("Guild", 0); TB:SetLootMute("Public", 0)
+click(TB.Frames.tabs.Wanted)
+local wanted = assert(TB:AddWanted(mailLink))
+assert(TB.Frames.wantedRows[1]:IsShown() and TB.Frames.wantedRows[1].name:GetText() == mailLink, "Wanted subscription was not rendered")
+TB:ClearGuildLoot()
+TB:CaptureWorldMessage("WTS " .. mailLink .. " 3g", "WantedSeller", "World")
+assert(TB.GuildLoot.active and TB.GuildLoot.active.kind == "WANTED" and TB.GuildLoot.active.wanted == wanted.name, "matching World WTS did not open a Wanted alert")
+TB:ClearGuildLoot(); TB:SetLootMute("Public", 300)
+TB:CheckWantedEntry({ id = "muted-match", type = "WTS", channel = "World", sender = "MutedSeller", message = "WTS " .. mailLink, items = { mailLink } })
+assert(not TB.GuildLoot.active, "public mute did not suppress Wanted popup")
+TB:SetLootMute("Public", 0)
+TB:RemoveWanted(wanted.id)
+
+TB:SetChainVolunteer(1)
+local ownVolunteer = TB:GetOwnVolunteer()
+assert(ownVolunteer and ownVolunteer.enabled and ownVolunteer.low == 25 and ownVolunteer.high == 35, "trade-chain volunteer range was not current level +/-5")
+local order = assert(TB:CreateChainOrder("ChainOwner", mailLink, 4, "Tester", "Mule", "bank handoff"))
+assert(order.status == "REQUESTED" and order.quantity == 4 and order.fromName == "Tester" and order.toName == "Mule", "delivery order lost its route fields")
+TB:AdvanceChainOrder(order); assert(order.status == "PICKED UP", "delivery order did not advance to picked up")
+TB:AdvanceChainOrder(order); assert(order.status == "DELIVERED", "delivery order did not advance to delivered")
+TB:OpenDeliveryDesk()
+assert(TB.Frames.deliveryDesk:IsShown() and TB.Frames.orderRows[1]:IsShown(), "delivery desk did not show tracked orders")
+local remoteOrder = TB.PROTOCOL .. "~O~remote-order~ChainOwner~RemoteBuyer~Copper Bar~2~Banker~Carrier~meet SW~REQUESTED~" .. tostring(TB:GetWallTime()) .. "~RemoteBuyer"
+TB:HandleProtocolMessage(remoteOrder, "RemoteBuyer")
+assert(table.getn(TB.ChainOrders) == 2, "peer delivery order was not accepted")
+TB.Frames.deliveryDesk:Hide(); TB.Frames.settingsPanel:Hide()
 
 -- World message text and link hitboxes must stay inside their bordered rows.
 local function assertWorldMessageLayout(row)

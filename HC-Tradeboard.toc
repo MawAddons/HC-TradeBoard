@@ -1,11 +1,12 @@
 ## Interface: 11200
 ## Title: |cffb8c0ccHC|r |cffa335eeTradeBoard|r
-## Notes: v0.7.5: a cozy little marketplace for heroes without an auction house
+## Notes: v0.8.0: peer trade, wanted alerts, and delivery chains for heroes
 ## Author: OctoWow Community
-## Version: 0.7.5
+## Version: 0.8.0
 ## SavedVariables: TradeBoardDB
 
 Core.lua
 Network.lua
+Features.lua
 UI.lua
 GuildLoot.lua

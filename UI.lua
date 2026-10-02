@@ -351,6 +351,8 @@ function TB:OnMainFrameHidden()
     if self.Frames.chainEditor then
         self.Frames.chainEditor:Hide()
     end
+    if self.Frames.deliveryDesk then self.Frames.deliveryDesk:Hide() end
+    if self.Frames.settingsPanel then self.Frames.settingsPanel:Hide() end
     if self.Frames.professionEditor then
         self.Frames.professionEditor:Hide()
     end
@@ -392,7 +394,9 @@ function TB:CreateMainFrame()
     frame:SetFrameStrata("HIGH")
     frame:SetMovable(1)
     if frame.SetClampedToScreen then
-        frame:SetClampedToScreen(1)
+        -- Players often keep bags at the right edge; allow TradeBoard to be
+        -- parked partly beyond the game viewport instead of forcing overlap.
+        frame:SetClampedToScreen(nil)
     end
     frame:EnableMouse(1)
     frame:SetBackdrop(MAIN_BACKDROP)
@@ -429,6 +433,7 @@ function TB:CreateMainFrame()
 
     local version = CreateText(header, "v" .. self.VERSION, "GameFontDisableSmall", 0.55, 0.50, 0.40)
     version:SetPoint("LEFT", header, "LEFT", 8, 0)
+    self.Frames.versionLabel = version
 
     local memory = CreateFrame("Frame", nil, header)
     memory:SetWidth(190); memory:SetHeight(24)
@@ -471,6 +476,23 @@ function TB:CreateMainFrame()
     end)
     self.Frames.closeButton = close
 
+    local minimize = CreateButton(frame, "-", 36, 32)
+    minimize:SetPoint("RIGHT", close, "LEFT", -6, 0)
+    minimize:SetFrameLevel(header:GetFrameLevel() + 10)
+    minimize:SetScript("OnClick", function() TB:SetMinimized(not TB.isMinimized) end)
+    self.Frames.minimizeButton = minimize
+
+    local settings = CreateButton(frame, "", 36, 32)
+    settings:SetPoint("RIGHT", minimize, "LEFT", -6, 0)
+    settings:SetFrameLevel(header:GetFrameLevel() + 10)
+    local settingsIcon = settings:CreateTexture(nil, "ARTWORK")
+    settingsIcon:SetTexture("Interface\\Icons\\INV_Misc_Gear_01")
+    settingsIcon:SetWidth(19); settingsIcon:SetHeight(19); settingsIcon:SetPoint("CENTER", settings, "CENTER", 0, 0)
+    settings:SetScript("OnClick", function() TB:ToggleSettings() end)
+    settings:SetScript("OnEnter", function() GameTooltip:SetOwner(this, "ANCHOR_BOTTOM"); GameTooltip:SetText("TradeBoard settings"); GameTooltip:Show() end)
+    settings:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    self.Frames.settingsButton = settings
+
     local content = CreateFrame("Frame", nil, frame)
     content:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -94)
     content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 48)
@@ -479,9 +501,11 @@ function TB:CreateMainFrame()
     self:CreateTabs(frame)
     self:CreateBrowsePane(content)
     self:CreateMyListingsPane(content)
+    self:CreateWantedPane(content)
     self:CreateTradeChainsPane(content)
     self:CreateProfessionsPane(content)
     self:CreateWorldLogPane(content)
+    self:CreateSettingsPanel(frame)
 
     local statusBar = CreateFrame("Frame", nil, frame)
     statusBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 15)
@@ -490,6 +514,7 @@ function TB:CreateMainFrame()
     statusBar:SetBackdrop(PANEL_BACKDROP)
     statusBar:SetBackdropColor(0.025, 0.025, 0.025, 1)
     statusBar:SetBackdropBorderColor(0.30, 0.25, 0.15, 1)
+    self.Frames.statusBar = statusBar
 
     local statusText = CreateText(statusBar, "Ready.", "GameFontHighlightSmall", 0.70, 0.67, 0.58)
     statusText:SetPoint("LEFT", statusBar, "LEFT", 8, 0)
@@ -609,8 +634,8 @@ end
 
 function TB:CreateTabs(parent)
     self.Frames.tabs = {}
-    local names = { "Browse", "My Listings", "Trade Chains", "Professions", "World Trade" }
-    local widths = { 150, 160, 160, 150, 170 }
+    local names = { "Browse", "My Listings", "Wanted", "Trade Chains", "Professions", "World Trade" }
+    local widths = { 138, 150, 112, 146, 138, 152 }
     local x = 24
     local i
 
@@ -1637,7 +1662,108 @@ function TB:CreateTradeChainsPane(parent)
         TB:OpenChainEditor()
     end)
 
+    local delivery = CreateButton(pane, "Delivery Desk", 138, 42)
+    delivery:SetPoint("RIGHT", listChain, "LEFT", -8, 0)
+    delivery:SetScript("OnClick", function() TB:OpenDeliveryDesk() end)
+
     self:CreateChainEditor(pane)
+    self:CreateDeliveryDesk(pane)
+end
+
+function TB:CreateDeliveryDesk(parent)
+    local desk = CreatePanel(parent, 1040, 520)
+    desk:SetPoint("CENTER", parent, "CENTER", 0, 0); desk:SetFrameLevel(parent:GetFrameLevel() + 24); desk:EnableMouse(1); desk:Hide()
+    desk:EnableMouseWheel(1)
+    desk:SetScript("OnMouseWheel", function()
+        TB.State.chainOrderOffset = math.max(0, (TB.State.chainOrderOffset or 0) + (arg1 > 0 and -1 or 1))
+        TB:UpdateDeliveryDesk()
+    end)
+    self.Frames.deliveryDesk = desk
+    local title = CreateText(desk, "Trade Chain Delivery Desk", "GameFontNormalLarge", 1.00, 0.78, 0.20); title:SetPoint("TOP", desk, "TOP", 0, -14)
+    local close = CreateButton(desk, "X", 30, 26); close:SetPoint("TOPRIGHT", desk, "TOPRIGHT", -10, -9); close:SetScript("OnClick", function() desk:Hide() end)
+    local help = CreateText(desk, "Peer-shared orders record the item, who hands it off, who receives it, and delivery status.", "GameFontHighlightSmall", 0.72, 0.68, 0.58)
+    help:SetPoint("TOP", title, "BOTTOM", 0, -5)
+    local labels = { { "Item / link", 18, 340 }, { "Qty", 368, 52 }, { "From", 430, 150 }, { "To", 590, 150 }, { "Note", 750, 190 } }
+    self.Frames.orderInputs = {}
+    local i
+    for i = 1, table.getn(labels) do
+        local spec = labels[i]
+        local label = CreateText(desk, spec[1], "GameFontNormalSmall", 0.90, 0.74, 0.30); label:SetPoint("TOPLEFT", desk, "TOPLEFT", spec[2], -60)
+        local edit = CreateEditBox(desk, spec[3], 28, ""); edit:SetPoint("TOPLEFT", desk, "TOPLEFT", spec[2], -78); edit:SetMaxLetters(i == 5 and 70 or 180)
+        self.Frames.orderInputs[i] = edit
+    end
+    self.Frames.orderInputs[2]:SetNumeric(1)
+    local publish = CreateButton(desk, "Publish order", 138, 30); publish:SetPoint("TOPRIGHT", desk, "TOPRIGHT", -18, -112)
+    publish:SetScript("OnClick", function()
+        local chain = TB.State.selectedChain and TB.Chains[TB.State.selectedChain]
+        local order, reason = TB:CreateChainOrder(chain and chain.owner or UnitName("player"), TB.Frames.orderInputs[1]:GetText(), TB.Frames.orderInputs[2]:GetText(),
+            TB.Frames.orderInputs[3]:GetText(), TB.Frames.orderInputs[4]:GetText(), TB.Frames.orderInputs[5]:GetText())
+        if order then
+            TB.Frames.orderInputs[1]:SetText(""); TB.Frames.orderInputs[2]:SetText(""); TB.Frames.orderInputs[5]:SetText("")
+            TB:SetStatus("Delivery order published to peers.")
+        else TB:SetStatus(reason) end
+    end)
+    local volunteer = CreateCheckButton(desk, "Advertise me as a chain spot (my level +/-5)", 390, nil, function(value) TB:SetChainVolunteer(value) end)
+    volunteer:SetPoint("TOPLEFT", desk, "TOPLEFT", 18, -119); self.Frames.deliveryVolunteer = volunteer
+    local volunteerCount = CreateText(desk, "", "GameFontHighlightSmall", 0.55, 0.90, 0.65); volunteerCount:SetPoint("LEFT", volunteer, "RIGHT", 12, 0); self.Frames.deliveryVolunteerCount = volunteerCount
+    local header = CreateText(desk, "STATUS          ITEM / QTY                                      FROM  >  TO                         CUSTOMER", "GameFontNormalSmall", 0.90, 0.74, 0.30)
+    header:SetPoint("TOPLEFT", desk, "TOPLEFT", 18, -161)
+    self.Frames.orderRows = {}
+    local orderScrollbar = CreateClassicScrollbar(desk, 300, function(value) TB.State.chainOrderOffset = value; TB:UpdateDeliveryDesk() end)
+    orderScrollbar:SetPoint("TOPRIGHT", desk, "TOPRIGHT", -4, -181); self.Frames.orderScrollbar = orderScrollbar
+    for i = 1, 7 do
+        local row = CreatePanel(desk, 1004, 40); row:SetPoint("TOPLEFT", desk, "TOPLEFT", 18, -181 - ((i - 1) * 44))
+        row.status = CreateText(row, "", "GameFontNormalSmall", 0.55, 1.00, 0.55); row.status:SetPoint("LEFT", row, "LEFT", 8, 0); row.status:SetWidth(90); row.status:SetJustifyH("LEFT")
+        row.item = CreateText(row, "", "GameFontHighlightSmall", 0.92, 0.90, 0.84); row.item:SetPoint("LEFT", row, "LEFT", 105, 0); row.item:SetWidth(320); row.item:SetJustifyH("LEFT")
+        row.route = CreateText(row, "", "GameFontHighlightSmall", 0.80, 0.82, 0.88); row.route:SetPoint("LEFT", row, "LEFT", 435, 0); row.route:SetWidth(260); row.route:SetJustifyH("LEFT")
+        row.customer = CreateText(row, "", "GameFontHighlightSmall", 0.84, 0.76, 0.62); row.customer:SetPoint("LEFT", row, "LEFT", 700, 0); row.customer:SetWidth(150); row.customer:SetJustifyH("LEFT")
+        row.advance = CreateButton(row, "Advance", 125, 27); row.advance:SetPoint("RIGHT", row, "RIGHT", -7, 0)
+        row.advance:SetScript("OnClick", function() if this.order then TB:AdvanceChainOrder(this.order) end end)
+        self.Frames.orderRows[i] = row
+    end
+end
+
+function TB:OpenDeliveryDesk()
+    self:InitializeFeatureData()
+    local chain = self.State.selectedChain and self.Chains[self.State.selectedChain]
+    local player = UnitName("player") or ""
+    self.Frames.orderInputs[3]:SetText(player)
+    self.Frames.orderInputs[4]:SetText(chain and chain.owner or "")
+    if self.Frames.chainEditor then self.Frames.chainEditor:Hide() end
+    self:UpdateDeliveryDesk(); self.Frames.deliveryDesk:Show()
+end
+
+function TB:UpdateDeliveryDesk()
+    if not self.Frames.orderRows then return end
+    self:InitializeFeatureData()
+    local volunteer = self:GetOwnVolunteer()
+    self.Frames.deliveryVolunteer:SetCheckedValue(volunteer and volunteer.enabled)
+    local volunteers = 0
+    local key, entry
+    for key, entry in pairs(self.ChainVolunteers) do if entry.enabled then volunteers = volunteers + 1 end end
+    self.Frames.deliveryVolunteerCount:SetText(volunteers .. (volunteers == 1 and " available spot" or " available spots"))
+    local selected = self.State.selectedChain and self.Chains[self.State.selectedChain]
+    local visible = {}
+    local i
+    for i = table.getn(self.ChainOrders), 1, -1 do
+        local order = self.ChainOrders[i]
+        if not selected or string.lower(order.chainOwner or "") == string.lower(selected.owner or "") or string.lower(order.customer or "") == string.lower(UnitName("player") or "") then table.insert(visible, order) end
+    end
+    local maxOffset = math.max(0, table.getn(visible) - table.getn(self.Frames.orderRows))
+    if self.State.chainOrderOffset > maxOffset then self.State.chainOrderOffset = maxOffset end
+    for i = 1, table.getn(self.Frames.orderRows) do
+        local row, order = self.Frames.orderRows[i], visible[(self.State.chainOrderOffset or 0) + i]
+        if order then
+            row.status:SetText(order.status or "REQUESTED")
+            row.item:SetText((order.item or "Unknown") .. " x" .. tostring(order.quantity or 1))
+            row.route:SetText((order.fromName or "?") .. "  >  " .. (order.toName ~= "" and order.toName or order.chainOwner or "?"))
+            row.customer:SetText(order.customer or "?"); row.advance.order = order
+            row.advance.label:SetText(order.status == "DELIVERED" and "Reopen" or (order.status == "PICKED UP" and "Delivered" or "Pick up"))
+            if self:CanAdvanceChainOrder(order) then row.advance:Show() else row.advance:Hide() end
+            row:Show()
+        else row.advance.order = nil; row:Hide() end
+    end
+    self.Frames.orderScrollbar:SetRange(self.State.chainOrderOffset, maxOffset)
 end
 
 function TB:CreateChainEditor(parent)
@@ -1717,6 +1843,7 @@ function TB:OpenChainEditor()
         self.Frames.chainMemberEdits[slot]:SetText(playerName)
     end
 
+    if self.Frames.deliveryDesk then self.Frames.deliveryDesk:Hide() end
     self.Frames.chainEditor:Show()
     self.Frames.chainNameEdit:SetFocus()
     self.Frames.chainNameEdit:HighlightText()
@@ -2552,6 +2679,159 @@ function TB:UpdateWorldLog()
     if self.Frames.worldScrollbar then self.Frames.worldScrollbar:SetRange(self.State.worldOffset, maxOffset) end
 end
 
+function TB:SetMinimized(minimized)
+    self.isMinimized = minimized and 1 or nil
+    local frame = self.Frames.main
+    local name, tab
+    if self.isMinimized then
+        self.Frames.content:Hide()
+        self.Frames.versionLabel:Hide(); self.Frames.memoryUsage:Hide()
+        if self.Frames.statusBar then self.Frames.statusBar:Hide() end
+        for name, tab in pairs(self.Frames.tabs or {}) do tab:Hide() end
+        if self.Frames.settingsPanel then self.Frames.settingsPanel:Hide() end
+        frame:SetWidth(420); frame:SetHeight(64)
+        self.Frames.minimizeButton.label:SetText("+")
+    else
+        frame:SetWidth(1180); frame:SetHeight(720)
+        self.Frames.content:Show()
+        self.Frames.versionLabel:Show(); self.Frames.memoryUsage:Show()
+        if self.Frames.statusBar then self.Frames.statusBar:Show() end
+        for name, tab in pairs(self.Frames.tabs or {}) do tab:Show() end
+        self.Frames.minimizeButton.label:SetText("-")
+        self:SetActiveTab(self.State.activeTab)
+    end
+    TradeBoardDB = TradeBoardDB or {}
+    TradeBoardDB.minimized = self.isMinimized
+end
+
+function TB:CreateWantedPane(parent)
+    local pane = CreateFrame("Frame", nil, parent)
+    pane:SetAllPoints(parent); pane:Hide()
+    self.Frames.wantedPane = pane
+    local title = CreateText(pane, "Wanted subscriptions", "GameFontNormalLarge", 1.00, 0.78, 0.20)
+    title:SetPoint("TOPLEFT", pane, "TOPLEFT", 8, -8)
+    local help = CreateText(pane, "Add an item name or link. Matching WTS posts seen locally or through peers open the loot-style alert.", "GameFontHighlightSmall", 0.72, 0.68, 0.58)
+    help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    local input = CreateEditBox(pane, 560, 30, "")
+    input:SetPoint("TOPLEFT", pane, "TOPLEFT", 8, -54); input:SetMaxLetters(180)
+    self.Frames.wantedInput = input
+    local add = CreateButton(pane, "Add subscription", 150, 30)
+    add:SetPoint("LEFT", input, "RIGHT", 8, 0)
+    add:SetScript("OnClick", function()
+        local wanted, reason = TB:AddWanted(TB.Frames.wantedInput:GetText())
+        if wanted then TB.Frames.wantedInput:SetText(""); TB:SetStatus("Subscribed to " .. wanted.name .. ".") else TB:SetStatus(reason) end
+    end)
+    input:SetScript("OnEnterPressed", function() local wanted, reason = TB:AddWanted(this:GetText()); if wanted then this:SetText(""); TB:SetStatus("Subscribed to " .. wanted.name .. ".") else TB:SetStatus(reason) end; this:ClearFocus() end)
+    local fromBrowse = CreateButton(pane, "Use selected Browse item", 190, 30)
+    fromBrowse:SetPoint("LEFT", add, "RIGHT", 8, 0)
+    fromBrowse:SetScript("OnClick", function()
+        local listing = TB.State.selectedListing
+        if not listing then TB:SetStatus("Select an item in Browse first."); return end
+        local wanted, reason = TB:AddWanted(TB:GetListingItemLink(listing) or listing.name)
+        TB:SetStatus(wanted and ("Subscribed to " .. wanted.name .. ".") or reason)
+    end)
+    local panel = CreatePanel(pane, 1138, 434)
+    panel:SetPoint("TOPLEFT", pane, "TOPLEFT", 8, -100)
+    panel:EnableMouseWheel(1)
+    panel:SetScript("OnMouseWheel", function()
+        local maxOffset = math.max(0, table.getn(TB.Wanted or {}) - 10)
+        TB.State.wantedOffset = TB.State.wantedOffset + (arg1 > 0 and -1 or 1)
+        if TB.State.wantedOffset < 0 then TB.State.wantedOffset = 0 elseif TB.State.wantedOffset > maxOffset then TB.State.wantedOffset = maxOffset end
+        TB:UpdateWanted()
+    end)
+    local heading = CreateText(panel, "ON     ITEM / SEARCH TERM", "GameFontNormal", 0.90, 0.74, 0.30)
+    heading:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -10)
+    self.Frames.wantedRows = {}
+    local wantedScrollbar = CreateClassicScrollbar(panel, 390, function(value) TB.State.wantedOffset = value; TB:UpdateWanted() end)
+    wantedScrollbar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -3, -35); self.Frames.wantedScrollbar = wantedScrollbar
+    local i
+    for i = 1, 10 do
+        local row = CreatePanel(panel, 1104, 34)
+        row:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -37 - ((i - 1) * 38))
+        row.toggle = CreateButton(row, "ON", 54, 24); row.toggle:SetPoint("LEFT", row, "LEFT", 7, 0)
+        row.toggle:SetScript("OnClick", function() if this.wantedID then TB:ToggleWanted(this.wantedID) end end)
+        row.name = CreateText(row, "", "GameFontHighlight", 0.90, 0.88, 0.80); row.name:SetPoint("LEFT", row, "LEFT", 76, 0); row.name:SetWidth(850); row.name:SetJustifyH("LEFT")
+        row.remove = CreateButton(row, "Remove", 105, 24); row.remove:SetPoint("RIGHT", row, "RIGHT", -7, 0)
+        row.remove:SetScript("OnClick", function() if this.wantedID then TB:RemoveWanted(this.wantedID) end end)
+        self.Frames.wantedRows[i] = row
+    end
+    local count = CreateText(pane, "0 subscriptions", "GameFontHighlightSmall", 0.80, 0.75, 0.64)
+    count:SetPoint("BOTTOMLEFT", pane, "BOTTOMLEFT", 10, 2); self.Frames.wantedCount = count
+end
+
+function TB:UpdateWanted()
+    if not self.Frames.wantedRows then return end
+    self:InitializeFeatureData()
+    local maxOffset = math.max(0, table.getn(self.Wanted) - table.getn(self.Frames.wantedRows))
+    if self.State.wantedOffset > maxOffset then self.State.wantedOffset = maxOffset end
+    local i
+    for i = 1, table.getn(self.Frames.wantedRows) do
+        local row, wanted = self.Frames.wantedRows[i], self.Wanted[(self.State.wantedOffset or 0) + i]
+        if wanted then
+            row.toggle.wantedID = wanted.id; row.remove.wantedID = wanted.id
+            row.toggle.label:SetText(wanted.enabled and "ON" or "OFF")
+            SetButtonSelected(row.toggle, wanted.enabled)
+            row.name:SetText(wanted.itemLink or wanted.name); row:Show()
+        else row.toggle.wantedID = nil; row.remove.wantedID = nil; row:Hide() end
+    end
+    self.Frames.wantedCount:SetText(table.getn(self.Wanted) .. " / " .. self.MAX_WANTED .. " subscriptions")
+    self.Frames.wantedScrollbar:SetRange(self.State.wantedOffset, maxOffset)
+end
+
+function TB:CreateSettingsPanel(parent)
+    local panel = CreatePanel(parent, 620, 490)
+    panel:SetPoint("CENTER", parent, "CENTER", 0, 0); panel:SetFrameLevel(parent:GetFrameLevel() + 30); panel:EnableMouse(1); panel:Hide()
+    self.Frames.settingsPanel = panel
+    local title = CreateText(panel, "HC TradeBoard Settings", "GameFontNormalLarge", 1.00, 0.78, 0.20); title:SetPoint("TOP", panel, "TOP", 0, -18)
+    local close = CreateButton(panel, "X", 30, 26); close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, -10); close:SetScript("OnClick", function() panel:Hide() end)
+    local function MuteRow(y, label, channel)
+        local caption = CreateText(panel, label, "GameFontNormal", 0.92, 0.85, 0.68); caption:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, y)
+        local status = CreateText(panel, "", "GameFontHighlightSmall", 0.55, 1.00, 0.55); status:SetPoint("LEFT", caption, "RIGHT", 12, 0)
+        local choices = { { "5m", 300 }, { "10m", 600 }, { "60m", 3600 }, { "2h", 7200 }, { "Until enabled", -1 }, { "Enable", 0 } }
+        local previous, i
+        for i = 1, table.getn(choices) do
+            local button = CreateButton(panel, choices[i][1], i == 5 and 112 or 68, 28)
+            if previous then button:SetPoint("LEFT", previous, "RIGHT", 7, 0) else button:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, y - 29) end
+            local seconds = choices[i][2]
+            button:SetScript("OnClick", function() TB:SetLootMute(channel, seconds) end)
+            previous = button
+        end
+        return status
+    end
+    self.Frames.guildMuteStatus = MuteRow(-62, "Guild item popups", "Guild")
+    self.Frames.publicMuteStatus = MuteRow(-132, "World / Trade item popups", "Public")
+    local wanted = CreateCheckButton(panel, "Notify me when a Wanted subscription matches", 420, 1, function(value)
+        TB:InitializeFeatureData(); TradeBoardDB.settings.wantedNotifications = value and 1 or nil
+    end)
+    wanted:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -212); self.Frames.wantedNotificationsCheck = wanted
+    local volunteer = CreateCheckButton(panel, "I want to earn a bit by being a trade-chain spot", 470, nil, function(value) TB:SetChainVolunteer(value) end)
+    volunteer:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -246); self.Frames.volunteerCheck = volunteer
+    local volunteerHint = CreateText(panel, "Advertises this character at current level +/-5; no automatic whispers or trades.", "GameFontHighlightSmall", 0.70, 0.67, 0.58)
+    volunteerHint:SetPoint("TOPLEFT", panel, "TOPLEFT", 50, -275)
+    local networkTitle = CreateText(panel, "Peer network: Conservative", "GameFontNormal", 0.90, 0.78, 0.35); networkTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -318)
+    local networkHelp = CreateText(panel, "At most 8 hidden-channel messages/minute, 5s spacing, 15s pause after your chat,\nand smaller sync snapshots. World/Trade discovery stays local and peer-shared.", "GameFontHighlightSmall", 0.72, 0.68, 0.58)
+    networkHelp:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -343); networkHelp:SetWidth(560); networkHelp:SetJustifyH("LEFT")
+    local reset = CreateButton(panel, "Reset window to center", 200, 30); reset:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 24, 20)
+    reset:SetScript("OnClick", function() TB.Frames.main:ClearAllPoints(); TB.Frames.main:SetPoint("CENTER", UIParent, "CENTER", 0, 0); TB:SetMinimized(nil); panel:Show() end)
+end
+
+function TB:ToggleSettings()
+    if self.Frames.settingsPanel:IsShown() then self.Frames.settingsPanel:Hide()
+    else
+        if self.isMinimized then self:SetMinimized(nil) end
+        self:UpdateSettings(); self.Frames.settingsPanel:Show()
+    end
+end
+
+function TB:UpdateSettings()
+    self:InitializeFeatureData()
+    self.Frames.guildMuteStatus:SetText(self:GetLootMuteLabel("Guild"))
+    self.Frames.publicMuteStatus:SetText(self:GetLootMuteLabel("Public"))
+    self.Frames.wantedNotificationsCheck:SetCheckedValue(TradeBoardDB.settings.wantedNotifications)
+    local volunteer = self:GetOwnVolunteer()
+    self.Frames.volunteerCheck:SetCheckedValue(volunteer and volunteer.enabled)
+end
+
 function TB:SetActiveTab(tabName)
     if self.openFilterMenu then self.openFilterMenu:Hide(); self.openFilterMenu = nil end
     self.State.activeTab = tabName
@@ -2560,6 +2840,7 @@ function TB:SetActiveTab(tabName)
     end
     self.Frames.browsePane:Hide()
     self.Frames.myListingsPane:Hide()
+    self.Frames.wantedPane:Hide()
     self.Frames.tradeChainsPane:Hide()
     self.Frames.professionsPane:Hide()
     self.Frames.worldLogPane:Hide()
@@ -2571,6 +2852,9 @@ function TB:SetActiveTab(tabName)
         self.Frames.myListingsPane:Show()
         self:UpdateListingEditor()
         self:UpdateMyListings()
+    elseif tabName == "Wanted" then
+        self.Frames.wantedPane:Show()
+        self:UpdateWanted()
     elseif tabName == "Trade Chains" then
         self.Frames.tradeChainsPane:Show()
         self:UpdateTradeChains()
@@ -2869,6 +3153,15 @@ function TB:Initialize()
         elseif command == "probe" or command == "sync" then
             TB:ProbeAndSync()
             TB:SetStatus("Peer probe and listing sync requested.")
+        elseif command == "settings" then
+            if not TB.Frames.main:IsShown() then TB.Frames.main:Show() end
+            TB:SetMinimized(nil)
+            TB:ToggleSettings()
+        elseif command == "reset" then
+            TB.Frames.main:ClearAllPoints()
+            TB.Frames.main:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            TB:SetMinimized(nil)
+            TB.Frames.main:Show()
         else
             TB:Toggle()
         end
@@ -2893,6 +3186,7 @@ function TB:Initialize()
                 TradeBoardDB = {}
             end
             TB:SetMinimapButtonAngle(TradeBoardDB.minimapAngle or -2.52)
+            TB:SetMinimized(TradeBoardDB.minimized)
             TB:UpdateBrowse()
         elseif event == "PLAYER_ENTERING_WORLD" then
             TB:UpdateBrowse()
@@ -2902,6 +3196,8 @@ function TB:Initialize()
             end
         elseif event == "PLAYER_LEVEL_UP" then
             TB:RefreshOwnListingLevels(arg1)
+            local volunteer = TB.GetOwnVolunteer and TB:GetOwnVolunteer()
+            if volunteer and volunteer.enabled then TB:SetChainVolunteer(1) end
             TB:QueueOwnData(0)
             TB:UpdateBrowse()
         end

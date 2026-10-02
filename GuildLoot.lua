@@ -84,7 +84,7 @@ function TB:CaptureLootMessage(message, sender, channelName, channelNumber)
     elseif self:IsWorldChannel(channelName) then channel = "World"
     elseif self:IsTradeChannel(channelName) then channel = "Trade"
     else return nil end
-    if not self:IsGuildLootEnabled() or not message or not sender or sender == "" then return nil end
+    if not self:IsGuildLootEnabled() or (self.IsLootSourceEnabled and not self:IsLootSourceEnabled(channel)) or not message or not sender or sender == "" then return nil end
     if string.lower(sender) == string.lower(UnitName("player") or "") then return nil end
     local state = self.GuildLoot
     local now = GetTime()
@@ -262,6 +262,9 @@ function TB:ShowGuildLootPopup()
     if not self:IsGuildLootEnabled() then return end
     if not state.active then
         state.active = table.remove(state.queue, 1)
+        while state.active and self.IsLootSourceEnabled and not self:IsLootSourceEnabled(state.active.channel) do
+            state.active = table.remove(state.queue, 1)
+        end
         state.page = 1
         state.shownAt = GetTime()
     end
@@ -274,9 +277,14 @@ function TB:ShowGuildLootPopup()
     local count = table.getn(offer.links)
     local pages = math.max(1, math.ceil(count / ROWS))
     state.page = math.min(state.page, pages)
-    frame.title:SetText((offer.channel or "Guild") .. " loot offers")
-    local verb = offer.kind == "SELL" and " is selling" or " is offering loot"
-    frame.seller:SetText(offer.sender .. verb .. (offer.channel == "Guild" and " to guildmates" or ""))
+    if offer.kind == "WANTED" then
+        frame.title:SetText("Wanted item found - " .. (offer.channel or "World"))
+        frame.seller:SetText("Match for " .. (offer.wanted or "your subscription") .. " from " .. offer.sender)
+    else
+        frame.title:SetText((offer.channel or "Guild") .. " loot offers")
+        local verb = offer.kind == "SELL" and " is selling" or " is offering loot"
+        frame.seller:SetText(offer.sender .. verb .. (offer.channel == "Guild" and " to guildmates" or ""))
+    end
     local r, g, b = self:GetLootMessageColor(offer)
     frame.seller:SetTextColor(r, g, b)
     frame.message:SetTextColor(r, g, b)
