@@ -61,7 +61,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - Item-stat tooltips pass raw `item:...` hyperlinks for compatibility with AtlasLoot tooltip hooks.
 - Real bag-backed sale listings with quantity and gold/silver/copper total pricing; per-item price is calculated only in the tooltip.
 - Saved personal listings and a saved 12-slot level 5-60 trade chain.
-- Lightweight peer discovery, deduplicated queues, two-second global send pacing, eight-second World-log pacing, 15-minute announcements, and persistent offline caching. Background sends pause briefly whenever the player chats, reducing the risk of server spam throttling.
+- Lightweight peer discovery, deduplicated and coalesced queues, conservative rate limiting, 15-minute announcements, and persistent offline caching. Background sends pause whenever the player chats, reducing the risk of server spam throttling.
 - Listing broadcasts include the seller's current character level and item icon texture, with local item-cache refresh as a fallback.
 - Offline listings remain available when **Online only** is unchecked, with dimmed rows and last-seen information.
 - Peer-synced profession services with profession and guild filters, current skill rank, guild name, optional service notes, online/last-seen status, and direct whispering.
@@ -86,7 +86,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - Version 0.6.0 uses the `TB2` protocol because listing prices changed from per-item to total price. Peers must update to 0.6.0 or newer to exchange data.
 - Chat classification uses independent rules: Browse requires a real item link, while WTS/LFW profession imports use the first matching keyword (e.g. crusader, enchant, arcanite, transmute, mooncloth). A message can produce both an item offer and a service, and keywords inside item names can cause false service matches. Quantity/price extraction is best effort. WTS item offers expire after three hours; profession services and other chat-derived entries expire after twelve hours.
 - SavedVariables are shared by characters on one WoW account. Separate accounts share the World/Trade archive and Who-derived data only while their clients can meet through the peer channel.
-- The first live build publishes sale listings. Wanted-order creation is planned but not yet in the posting form.
+- Wanted subscriptions are private alerts, not published WTB listings. The listing editor still publishes SELL offers only.
 
 ## Regression checks
 
