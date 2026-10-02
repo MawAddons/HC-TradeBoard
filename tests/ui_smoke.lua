@@ -432,8 +432,9 @@ local queuedBeforeGuild = table.getn(TB.SendQueue or {})
 TB:CaptureGuildLootMessage("Anyone need anything? " .. link .. mailLink, "Frank")
 TB:CaptureGuildLootMessage(ringLink, "Frank")
 local guildPopup = TB.GuildLoot.frame
-assert(guildPopup and guildPopup:IsShown() and guildPopup:GetWidth() == 330 and guildPopup:GetHeight() == 305, "guild offer did not open its loot-sized popup")
+assert(guildPopup and guildPopup:IsShown() and guildPopup:GetWidth() == 330 and guildPopup:GetHeight() == 337, "guild offer did not open its loot-sized popup")
 assert(TB.GuildLoot.active.sender == "Frank" and table.getn(TB.GuildLoot.active.links) == 3, "linked guild follow-up items did not join the offer")
+assert(guildPopup.muteDuration.seconds == 600 and guildPopup.mute:GetText() == "Mute Guild", "guild popup mute controls were not initialized")
 assert(guildPopup.rows[1].itemLink == link and guildPopup.rows[3].itemLink == ringLink and not guildPopup.rows[4]:IsShown(), "guild popup item rows were incorrect")
 fire(guildPopup.rows[1], "OnEnter")
 assert(GameTooltip.hyperlink == "item:2589:0:0:0", "guild loot item did not show its tooltip")
@@ -444,6 +445,17 @@ assert(openedChat == "/w Frank ", "guild popup whisper targeted the wrong charac
 assert(table.getn(TB.SendQueue or {}) == queuedBeforeGuild, "guild popup created peer/chat traffic")
 click(guildPopup.dismiss)
 assert(not guildPopup:IsShown() and not TB.GuildLoot.active, "guild popup did not dismiss")
+
+-- The popup can mute its own source using the same account-wide timer as Settings.
+TB:CaptureLootMessage("free " .. link, "WorldSeller", "World", 4)
+TB:CaptureGuildLootMessage("free " .. mailLink, "GuildSeller2")
+fire(guildPopup.muteDuration.options[1], "OnClick")
+assert(guildPopup.muteDuration.seconds == 300 and TradeBoardDB.popupMuteSeconds == 300, "popup mute duration was not selected or saved")
+click(guildPopup.mute)
+assert(not TB:IsLootSourceEnabled("World") and TB.GuildLoot.active and TB.GuildLoot.active.channel == "Guild", "popup mute did not isolate World/Trade from Guild")
+assert(guildPopup.mute:GetText() == "Mute Guild", "popup mute button did not follow the next popup source")
+click(guildPopup.dismiss)
+TB:SetLootMute("Public", 0)
 
 -- Memory labels distinguish addon measurements from the shared Vanilla heap,
 -- and sampling must stay throttled even when the window is reopened.

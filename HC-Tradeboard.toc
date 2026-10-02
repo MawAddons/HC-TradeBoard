@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: |cffb8c0ccHC|r |cffa335eeTradeBoard|r
-## Notes: v0.8.0: peer trade, wanted alerts, and delivery chains for heroes
+## Notes: v0.8.1: popup mute controls, wanted alerts, and delivery chains
 ## Author: OctoWow Community
-## Version: 0.8.0
+## Version: 0.8.1
 ## SavedVariables: TradeBoardDB
 
 Core.lua

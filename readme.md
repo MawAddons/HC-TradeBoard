@@ -1,4 +1,4 @@
-# HC TradeBoard 0.8.0
+# HC TradeBoard 0.8.1
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -35,7 +35,7 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - In **Professions**, use **List / Edit Mine** to publish services learned by the current character, including skill rank and an optional short note.
 - The Professions tab includes the three guilds with the most distinct providers. Click a guild sigil to filter the service table; click it again to clear the filter.
 - Press Enter to open normal chat, then Shift-left-click a listed item to insert its real item link.
-- Guild item offers and tagged offers in World/Trade automatically open a compact loot window. Click an item to inspect it, or **Whisper** to draft a reply. `/tb loot off` disables notifications; `/tb loot on` enables them again. The older `/tb guildloot` commands remain aliases for the same setting.
+- Guild item offers and tagged offers in World/Trade automatically open a compact loot window. Click an item to inspect it, or **Whisper** to draft a reply. The popup includes a duration dropdown and a source-aware **Mute Guild** or **Mute World/Trade** button. `/tb loot off` disables notifications; `/tb loot on` enables them again. The older `/tb guildloot` commands remain aliases for the same setting.
 - The **Wanted** tab stores up to 50 account-wide item-name or item-link subscriptions. Matching WTS posts seen in World/Trade locally or through peers open a loot-style alert.
 - The **Trade Chains** delivery desk tracks peer-shared requests through Requested, Picked Up, and Delivered, including quantity, customer, handoff characters, and a note. Players can opt in as a paid chain spot advertised at their current level +/-5.
 

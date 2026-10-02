@@ -36,6 +36,7 @@ GameTooltip = CreateFrame()
 
 dofile("HC-Tradeboard/Core.lua")
 dofile("HC-Tradeboard/Network.lua")
+dofile("HC-Tradeboard/Features.lua")
 dofile("HC-Tradeboard/GuildLoot.lua")
 local TB = TradeBoard
 TB.OpenWorldWhisper = function(self, name) openedWhisper = name end
@@ -59,6 +60,7 @@ assert(TB:CaptureGuildLootMessage("wTs " .. sphere .. " 2g", "Seller"), "case-in
 assert(table.getn(TB.GuildLoot.queue) == 1, "second seller was not queued")
 
 local frame = TB.GuildLoot.frame
+assert(frame.muteDuration.seconds == 600 and frame.mute.text == "Mute Guild", "popup mute controls were not initialized")
 this = frame.rows[1]
 this.scripts.OnEnter()
 assert(tooltipItem == "item:1:0:0:0", "hover did not show item tooltip")
@@ -172,6 +174,15 @@ assert(not TB:CaptureLootMessage("free " .. cloak, "PublicSeller", "World", 4), 
 assert(not TB.GuildLoot.active and table.getn(TB.GuildLoot.queue) == 0, "disabling notifications retained a popup")
 TB:SetGuildLootEnabled(true)
 assert(TB:CaptureLootMessage("free " .. cloak, "PublicSeller", "World", 4), "public notifications did not re-enable")
+
+-- Muting from the popup uses the selected duration and only suppresses its source.
+this = frame.muteDuration.options[1]
+this.scripts.OnClick()
+assert(frame.muteDuration.seconds == 300 and TradeBoardDB.popupMuteSeconds == 300, "popup duration dropdown did not save 5 minutes")
+this = frame.mute
+this.scripts.OnClick()
+assert(not TB:IsLootSourceEnabled("World") and not TB.GuildLoot.active, "popup mute button did not suppress World/Trade")
+TB:SetLootMute("Public", 0)
 
 TB:ClearGuildLoot()
 for i = 1, 140 do TB:CaptureGuildLootMessage("WTS " .. link(i, "Item " .. i), "Seller" .. i) end

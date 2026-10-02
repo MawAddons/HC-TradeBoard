@@ -164,13 +164,74 @@ local function Button(parent, label, width)
     return button
 end
 
+local MUTE_DURATIONS = {
+    { label = "5 minutes", seconds = 300 },
+    { label = "10 minutes", seconds = 600 },
+    { label = "60 minutes", seconds = 3600 },
+    { label = "2 hours", seconds = 7200 },
+    { label = "Until enabled", seconds = -1 },
+}
+
+-- Kept local to the popup so it does not depend on the main window being open.
+local function MuteDurationDropdown(parent)
+    local button = Button(parent, "", 145)
+    local arrow = button:CreateTexture(nil, "ARTWORK")
+    arrow:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
+    arrow:SetWidth(18)
+    arrow:SetHeight(18)
+    arrow:SetPoint("RIGHT", button, "RIGHT", -3, 0)
+    local menu = CreateFrame("Frame", nil, button)
+    menu:SetWidth(145)
+    menu:SetHeight(table.getn(MUTE_DURATIONS) * 23 + 8)
+    menu:SetPoint("BOTTOMLEFT", button, "TOPLEFT", 0, 2)
+    menu:SetFrameStrata("TOOLTIP")
+    menu:SetBackdrop({ bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border", tile = true, tileSize = 16, edgeSize = 12, insets = { left = 4, right = 4, top = 4, bottom = 4 } })
+    menu:SetBackdropColor(0.04, 0.03, 0.02, 1)
+    menu:EnableMouse(true)
+    menu:Hide()
+    button.menu = menu
+    button.options = {}
+
+    function button:SetDuration(seconds)
+        self.seconds = tonumber(seconds) or 600
+        local i
+        for i = 1, table.getn(MUTE_DURATIONS) do
+            if MUTE_DURATIONS[i].seconds == self.seconds then
+                self:SetText(MUTE_DURATIONS[i].label)
+                break
+            end
+        end
+        TradeBoardDB = TradeBoardDB or {}
+        TradeBoardDB.popupMuteSeconds = self.seconds
+    end
+
+    local i
+    for i = 1, table.getn(MUTE_DURATIONS) do
+        local option = Button(menu, MUTE_DURATIONS[i].label, 135)
+        option:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, -4 - (i - 1) * 23)
+        option.seconds = MUTE_DURATIONS[i].seconds
+        option:SetScript("OnClick", function()
+            button:SetDuration(this.seconds)
+            menu:Hide()
+        end)
+        button.options[i] = option
+    end
+    button:SetScript("OnClick", function()
+        if menu:IsShown() then menu:Hide() else menu:Show() end
+    end)
+    button:SetScript("OnHide", function() menu:Hide() end)
+    local saved = TradeBoardDB and tonumber(TradeBoardDB.popupMuteSeconds) or 600
+    button:SetDuration(saved)
+    return button
+end
+
 function TB:CreateGuildLootPopup()
     local state = self.GuildLoot
     if state.frame then return state.frame end
     local frame = CreateFrame("Frame", "HCTradeBoardGuildLoot", UIParent)
     state.frame = frame
     frame:SetWidth(330)
-    frame:SetHeight(305)
+    frame:SetHeight(337)
     frame:SetPoint("RIGHT", UIParent, "RIGHT", -30, 70)
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -235,13 +296,22 @@ function TB:CreateGuildLootPopup()
         frame.rows[i] = row
     end
     frame.previous = Button(frame, "<", 25)
-    frame.previous:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 15, 39)
+    frame.previous:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 15, 70)
     frame.previous:SetScript("OnClick", function() state.page = math.max(1, state.page - 1); TB:ShowGuildLootPopup() end)
     frame.next = Button(frame, ">", 25)
-    frame.next:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -15, 39)
+    frame.next:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -15, 70)
     frame.next:SetScript("OnClick", function() state.page = state.page + 1; TB:ShowGuildLootPopup() end)
     frame.count = Text(frame, "GameFontHighlightSmall")
-    frame.count:SetPoint("BOTTOM", frame, "BOTTOM", 0, 45)
+    frame.count:SetPoint("BOTTOM", frame, "BOTTOM", 0, 76)
+    frame.muteDuration = MuteDurationDropdown(frame)
+    frame.muteDuration:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 41)
+    frame.mute = Button(frame, "Mute Guild", 137)
+    frame.mute:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 41)
+    frame.mute:SetScript("OnClick", function()
+        if state.active and TB.SetLootMute then
+            TB:SetLootMute(state.active.channel, frame.muteDuration.seconds)
+        end
+    end)
     frame.whisper = Button(frame, "Whisper", 137)
     frame.whisper:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 12)
     frame.whisper:SetScript("OnClick", function()
@@ -274,6 +344,7 @@ function TB:ShowGuildLootPopup()
     end
     local frame = self:CreateGuildLootPopup()
     local offer = state.active
+    frame.mute:SetText(offer.channel == "Guild" and "Mute Guild" or "Mute World/Trade")
     local count = table.getn(offer.links)
     local pages = math.max(1, math.ceil(count / ROWS))
     state.page = math.min(state.page, pages)
