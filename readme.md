@@ -1,4 +1,4 @@
-# HC TradeBoard 0.7.5
+# HC TradeBoard 0.8.0
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
@@ -26,6 +26,8 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 ## Using it
 
 - Open HC TradeBoard with `/tb`, `/tradeboard`, or the minimap coin.
+- Use the **-** button to collapse TradeBoard to a draggable title bar. The window may be parked partly outside the game viewport; `/tb reset` restores it to the center.
+- Open the gear button for Guild and World/Trade popup mute timers (5m, 10m, 60m, 2h, or until re-enabled), Wanted alerts, chain-spot opt-in, and window reset.
 - Opening HC TradeBoard requests current peer data and refreshes at most every ten minutes while the window remains open. `/tb probe` and `/tb sync` remain available as diagnostic commands, with a short anti-spam cooldown.
 - With HC TradeBoard open, Shift-left-click a bag item to load it into **My Listings**. You can also drag it onto the sale slot or arm one normal bag click. HC TradeBoard never opens the bags automatically.
 - A character can publish any number of active sale listings using quantity and a total stack price. Scroll **My Active Listings**, then select one and click **Remove Selected** to withdraw it.
@@ -34,6 +36,8 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - The Professions tab includes the three guilds with the most distinct providers. Click a guild sigil to filter the service table; click it again to clear the filter.
 - Press Enter to open normal chat, then Shift-left-click a listed item to insert its real item link.
 - Guild item offers and tagged offers in World/Trade automatically open a compact loot window. Click an item to inspect it, or **Whisper** to draft a reply. `/tb loot off` disables notifications; `/tb loot on` enables them again. The older `/tb guildloot` commands remain aliases for the same setting.
+- The **Wanted** tab stores up to 50 account-wide item-name or item-link subscriptions. Matching WTS posts seen in World/Trade locally or through peers open a loot-style alert.
+- The **Trade Chains** delivery desk tracks peer-shared requests through Requested, Picked Up, and Delivered, including quantity, customer, handoff characters, and a note. Players can opt in as a paid chain spot advertised at their current level +/-5.
 
 ## Features
 
@@ -45,6 +49,8 @@ Press **Esc** or the enlarged **X** button to close TradeBoard immediately, incl
 - Item-linked WTS/WTB chat messages appear as **Chat** offers in Browse. WTS item offers expire three hours after the original message, including those received from peers. WTB offers and recognized **Chat** services in Professions retain their twelve-hour lifetime. The World/Trade archive also remains twelve hours; rebuilding it never restores expired WTS offers.
 - Browse displays at most one row per item name + character name, ignoring case, color codes and extra whitespace. Published listings take priority over chat offers; otherwise the newest original post supplies price, quantity and expiry, without adding quantities together. Filtering and counts use unique visible offers. Original records remain available for My Listings, withdrawals and the World/Trade archive.
 - A classic minimap coin button for opening and closing HC TradeBoard.
+- A compact/minimized title-bar mode, an unclamped draggable main window, and a gear-based settings panel.
+- Conservative peer networking: five-second minimum spacing, at most eight hidden-channel messages per minute, a fifteen-second pause after player chat, coalesced records, and smaller sync snapshots.
 - Search, category, rarity, trader-level, online, listing-type, and item-level filters.
 - Simple Armor and Weapons subcategories without the full Auction House category tree.
 - One AH-style filter row with **Level**, **Rarity**, and **Listing Type** dropdowns, Min/Max fields, Online and Clear. Level defaults to **All**; **My range** explicitly enables the seller-level +/-5 filter.
