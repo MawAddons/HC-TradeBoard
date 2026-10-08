@@ -1,4 +1,6 @@
-# HC TradeBoard 0.8.1
+# HC TradeBoard 0.8.2
+
+Version 0.8.2 adds one shared, rate-limited MawAddons peer version check. A newer peer version produces one update notice with `https://github.com/MawAddons/HC-Tradeboard`.
 
 HC TradeBoard is a lightweight peer-synced market board for World of Warcraft 1.12.1. It has no central server: online clients exchange active listings and trade chains through a hidden custom chat channel named `TradeBoard`.
 
